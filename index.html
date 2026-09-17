@@ -1,1 +1,3492 @@
+<!doctype html>
+<html lang="en">
 
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>CodeScope</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        :root {
+            --bg: #03060a;
+            --panel: #060a10;
+            --line: #12202e;
+            --line2: #1a2e40;
+            --cyan: #3ecfe0;
+            --txt: #dff3f8;
+            --dim: #6f92a3;
+            --mute: #4a6b7c;
+            --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+            --sans: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        html,
+        body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--txt);
+            font: 11px/1.4 var(--mono);
+            -webkit-font-smoothing: antialiased
+        }
+
+        #app {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            height: 100vh
+        }
+
+        #wrap {
+            position: relative;
+            overflow: hidden;
+            background: var(--bg)
+        }
+
+        #map {
+            position: absolute;
+            inset: 0;
+            display: block;
+            cursor: grab;
+            touch-action: none
+        }
+
+        #map.dragging {
+            cursor: grabbing
+        }
+
+        #map3d {
+            position: absolute;
+            inset: 0;
+            display: none;
+            cursor: grab;
+            touch-action: none;
+            outline: none;
+        }
+
+        #map3d.active {
+            display: block;
+        }
+
+        #map3d.dragging {
+            cursor: grabbing;
+        }
+
+        #labels3d {
+            position: absolute;
+            inset: 0;
+            display: none;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        #labels3d.active {
+            display: block;
+        }
+
+        .mode-toggle {
+            display: inline-flex;
+            background: rgba(6, 10, 16, .85);
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 2px;
+            gap: 2px;
+            align-items: center;
+        }
+
+        .mode-btn {
+            all: unset;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 9px;
+            border-radius: 4px;
+            color: var(--dim);
+            font: 11px/1 var(--mono);
+            transition: .15s;
+        }
+
+        .mode-btn svg {
+            display: block;
+            opacity: 0.7;
+        }
+
+        .mode-btn:hover {
+            color: var(--txt);
+            background: rgba(255, 255, 255, .05);
+        }
+
+        .mode-btn.active {
+            background: rgba(62, 207, 224, .18);
+            border: 1px solid rgba(62, 207, 224, .45);
+            color: var(--cyan);
+            font-weight: 500;
+        }
+
+        .mode-btn.active svg {
+            opacity: 1;
+        }
+
+        #hud-top {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            background: linear-gradient(180deg, rgba(3, 6, 10, .92), rgba(3, 6, 10, 0));
+            pointer-events: none;
+            z-index: 3;
+            font-size: 11px
+        }
+
+        #hud-top>* {
+            pointer-events: auto
+        }
+
+        #brand {
+            color: var(--cyan);
+            font-weight: 500
+        }
+
+        #crumbs {
+            color: var(--dim);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 50%
+        }
+
+        #crumbs span.crumb {
+            cursor: pointer;
+            transition: color .12s;
+        }
+
+        #crumbs span.crumb:hover {
+            color: var(--cyan);
+            text-decoration: underline;
+            text-decoration-color: rgba(62, 207, 224, .4);
+        }
+
+        #crumbs b {
+            color: var(--txt);
+            font-weight: 400
+        }
+
+        #crumbs .sep {
+            color: var(--mute);
+            margin: 0 5px
+        }
+
+        #zoom {
+            margin-left: auto;
+            color: var(--mute);
+            font-size: 10px;
+            font-variant-numeric: tabular-nums
+        }
+
+        .hud-btn {
+            all: unset;
+            cursor: pointer;
+            background: rgba(6, 10, 16, .85);
+            border: 1px solid var(--line);
+            color: var(--txt);
+            padding: 6px 10px;
+            border-radius: 5px;
+            font: 11px/1 var(--mono);
+            transition: .13s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .hud-btn:hover {
+            border-color: var(--cyan);
+            color: var(--cyan);
+        }
+
+        .hud-btn kbd {
+            font-size: 9px;
+            color: var(--mute);
+            background: #0a1522;
+            padding: 1px 4px;
+            border-radius: 3px;
+            border: 1px solid #1a2a3a;
+        }
+
+        .hud-btn:hover kbd {
+            color: var(--cyan);
+        }
+
+        #hud-bot {
+            position: absolute;
+            left: 14px;
+            bottom: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            z-index: 3
+        }
+
+        #hud-bot button {
+            all: unset;
+            width: 30px;
+            height: 30px;
+            display: grid;
+            place-items: center;
+            background: rgba(6, 10, 16, .85);
+            border: 1px solid var(--line);
+            color: var(--dim);
+            cursor: pointer;
+            border-radius: 4px;
+            font: 14px/1 var(--mono);
+            transition: .12s
+        }
+
+        #hud-bot button:hover {
+            color: var(--cyan);
+            border-color: var(--cyan)
+        }
+
+        #hint {
+            position: absolute;
+            right: 14px;
+            bottom: 14px;
+            text-align: right;
+            color: var(--mute);
+            font-size: 10px;
+            line-height: 1.7;
+            z-index: 3;
+            pointer-events: none
+        }
+
+        #hint kbd {
+            background: #0a1522;
+            border: 1px solid #1a3a4a;
+            color: #7fa8bc;
+            padding: 1px 4px;
+            border-radius: 3px;
+            font-family: var(--mono);
+            font-size: 10px
+        }
+
+        /* ── EMPTY STATE ── */
+        #empty {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 18px;
+            z-index: 2;
+            background: radial-gradient(ellipse 60% 50% at 50% 50%, rgba(62, 207, 224, .04), transparent 70%)
+        }
+
+        #empty.hidden {
+            display: none
+        }
+
+        #empty h1 {
+            font: 300 34px/1 var(--mono);
+            letter-spacing: -.02em;
+            margin: 0;
+            color: var(--txt)
+        }
+
+        #empty h1 span {
+            color: var(--cyan)
+        }
+
+        #empty p {
+            color: var(--dim);
+            font-size: 12px;
+            margin: 0;
+            text-align: center;
+            max-width: 420px;
+            line-height: 1.7;
+            font-family: var(--sans)
+        }
+
+        #empty button {
+            all: unset;
+            cursor: pointer;
+            padding: 14px 28px;
+            border-radius: 8px;
+            background: rgba(62, 207, 224, .10);
+            border: 1px solid rgba(62, 207, 224, .5);
+            color: var(--cyan);
+            font: 500 13px/1 var(--mono);
+            letter-spacing: .02em;
+            transition: .15s;
+            box-shadow: 0 0 30px -8px rgba(62, 207, 224, .4)
+        }
+
+        #empty button:hover {
+            background: rgba(62, 207, 224, .18);
+            box-shadow: 0 0 40px -6px rgba(62, 207, 224, .7)
+        }
+
+        #empty .demo {
+            color: var(--mute);
+            font-size: 11px;
+            cursor: pointer;
+            text-decoration: underline;
+            text-decoration-color: rgba(74, 107, 124, .4)
+        }
+
+        #empty .demo:hover {
+            color: var(--dim)
+        }
+
+        #progress {
+            color: var(--dim);
+            font-size: 11px;
+            min-height: 16px
+        }
+
+        #progress-bar {
+            width: 260px;
+            height: 3px;
+            background: #0a1522;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 6px;
+            display: none;
+        }
+
+        #progress-bar.on {
+            display: block;
+        }
+
+        #progress-bar i {
+            display: block;
+            height: 100%;
+            background: linear-gradient(90deg, #3ecfe0, #7c8cff);
+            width: 0;
+            transition: width .2s;
+            box-shadow: 0 0 10px rgba(62, 207, 224, .6);
+        }
+
+        /* ── INSPECTOR ── */
+        #insp {
+            background: var(--panel);
+            border-left: 1px solid var(--line);
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            overflow: hidden
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid var(--line);
+            background: #08111a;
+            flex: none
+        }
+
+        .tabs span {
+            padding: 10px 12px;
+            color: var(--mute);
+            border-right: 1px solid var(--line);
+            font-size: 11px
+        }
+
+        .tabs span.on {
+            color: var(--cyan);
+            border-bottom: 1px solid var(--cyan);
+            margin-bottom: -1px
+        }
+
+        .info {
+            padding: 14px;
+            color: var(--dim);
+            line-height: 1.7;
+            overflow-y: auto;
+            flex: 1;
+            min-height: 0
+        }
+
+        .info .name {
+            color: var(--txt);
+            font-size: 12px;
+            margin-bottom: 8px;
+            word-break: break-word
+        }
+
+        .info .path {
+            font-size: 10.5px;
+            word-break: break-all;
+            color: var(--mute)
+        }
+
+        .info hr {
+            border: 0;
+            border-top: 1px solid var(--line);
+            margin: 12px 0
+        }
+
+        .info .kv {
+            display: flex;
+            gap: 6px
+        }
+
+        .info .kv u {
+            color: var(--txt);
+            text-decoration: none
+        }
+
+        .info .swatch {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            vertical-align: 0;
+            margin-right: 6px;
+            border-radius: 1px
+        }
+
+        .info .code-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: var(--mute);
+            font-size: 10px;
+            margin-top: 14px;
+            letter-spacing: .05em;
+            text-transform: uppercase
+        }
+
+        .info pre {
+            margin: 6px 0 0;
+            font: 10.5px/1.55 var(--mono);
+            white-space: pre;
+            overflow: auto;
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            padding: 10px 12px;
+            background: #04080d;
+            color: #c9d1d9
+        }
+
+        .info pre .ln {
+            display: inline-block;
+            width: 38px;
+            color: #2d4050;
+            user-select: none;
+            text-align: right;
+            padding-right: 10px;
+            border-right: 1px solid #0e1a24;
+            margin-right: 10px
+        }
+
+        .tk-kw { color: #c792ea }
+        .tk-typ { color: #ffcb6b }
+        .tk-num { color: #f78c6c }
+        .tk-str { color: #c3e88d }
+        .tk-com { color: #4a6b7c; font-style: italic }
+        .tk-pun { color: #89ddff }
+        .tk-id { color: #c9d1d9 }
+        .tk-txt { color: #c9d1d9 }
+        .tk-pp { color: #e6b04a }
+
+        .info .more {
+            color: var(--mute);
+            font-size: 10px;
+            text-align: center;
+            padding: 6px 0
+        }
+
+        .insp-foot {
+            display: flex;
+            gap: 6px;
+            padding: 10px 12px;
+            border-top: 1px solid var(--line);
+            background: #08111a;
+            flex: none;
+        }
+
+        .foot-btn {
+            all: unset;
+            cursor: pointer;
+            padding: 6px 10px;
+            border-radius: 5px;
+            border: 1px solid var(--line);
+            color: var(--dim);
+            font: 10px/1 var(--mono);
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: .13s;
+        }
+
+        .foot-btn:hover {
+            background: rgba(255, 255, 255, .04);
+            color: var(--txt);
+            border-color: var(--line2);
+        }
+
+        .foot-btn.primary {
+            background: rgba(62, 207, 224, .08);
+            border-color: rgba(62, 207, 224, .35);
+            color: var(--cyan);
+        }
+
+        .foot-btn.primary:hover {
+            background: rgba(62, 207, 224, .16);
+        }
+
+        .foot-btn.copied {
+            color: #34d399 !important;
+            border-color: #34d399 !important;
+        }
+
+        /* ── SEARCH OVERLAY ── */
+        #search-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(3, 6, 10, .55);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: flex-start;
+            justify-content: center;
+            padding-top: 12vh;
+            z-index: 100;
+        }
+
+        #search-overlay.on {
+            display: flex;
+        }
+
+        #search-modal {
+            width: 640px;
+            max-width: 90%;
+            background: #0a1218;
+            border: 1px solid var(--line2);
+            border-radius: 12px;
+            box-shadow: 0 30px 80px -20px #000, 0 0 0 1px rgba(62, 207, 224, .06);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            max-height: 65vh;
+        }
+
+        #search-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        #search-head .glass {
+            color: var(--cyan);
+            font-size: 16px;
+        }
+
+        #search-input {
+            all: unset;
+            flex: 1;
+            color: var(--txt);
+            font: 14px/1 var(--mono);
+        }
+
+        #search-input::placeholder {
+            color: var(--mute);
+        }
+
+        #search-head kbd {
+            font-size: 10px;
+            color: var(--mute);
+            background: #0a1522;
+            padding: 3px 6px;
+            border-radius: 4px;
+            border: 1px solid #1a2a3a;
+            font-family: var(--mono);
+        }
+
+        #search-count {
+            font-size: 10px;
+            color: var(--mute);
+            font-variant-numeric: tabular-nums;
+        }
+
+        #search-results {
+            overflow-y: auto;
+            flex: 1;
+            padding: 6px;
+        }
+
+        #search-results .r {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 11.5px;
+            color: var(--dim);
+            transition: .1s;
+        }
+
+        #search-results .r:hover,
+        #search-results .r.sel {
+            background: rgba(62, 207, 224, .10);
+            color: var(--txt);
+        }
+
+        #search-results .r.sel {
+            box-shadow: inset 0 0 0 1px rgba(62, 207, 224, .35);
+        }
+
+        #search-results .r .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 2px;
+            flex: none;
+        }
+
+        #search-results .r .name {
+            color: inherit;
+            font-weight: 500;
+            flex: none;
+        }
+
+        #search-results .r .path {
+            color: var(--mute);
+            font-size: 10.5px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+            text-align: right;
+        }
+
+        #search-results .r .loc {
+            font-size: 10px;
+            color: var(--mute);
+            font-variant-numeric: tabular-nums;
+            flex: none;
+        }
+
+        #search-results mark {
+            background: rgba(62, 207, 224, .28);
+            color: var(--txt);
+            padding: 0 1px;
+            border-radius: 2px;
+        }
+
+        #search-results .empty {
+            padding: 30px 20px;
+            text-align: center;
+            color: var(--mute);
+            font-size: 11.5px;
+        }
+
+        /* ── STATS PANEL ── */
+        #stats-panel {
+            position: absolute;
+            top: 76px;
+            left: 14px;
+            width: 240px;
+            background: rgba(6, 10, 16, .92);
+            backdrop-filter: blur(14px);
+            border: 1px solid var(--line2);
+            border-radius: 10px;
+            overflow: hidden;
+            z-index: 5;
+            box-shadow: 0 20px 60px -20px #000;
+            transform: translateX(-300px);
+            opacity: 0;
+            transition: transform .22s cubic-bezier(.22, .9, .2, 1), opacity .18s;
+            pointer-events: none;
+        }
+
+        #stats-panel.on {
+            transform: translateX(0);
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        #stats-panel h4 {
+            margin: 0;
+            padding: 11px 14px 9px;
+            font: 500 9px/1 var(--sans);
+            letter-spacing: .16em;
+            text-transform: uppercase;
+            color: var(--mute);
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--line);
+        }
+
+        #stats-panel h4 span {
+            color: var(--dim);
+            font: 10px/1 var(--mono);
+            letter-spacing: 0;
+            text-transform: none;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px;
+            background: var(--line);
+        }
+
+        .stat-cell {
+            background: rgba(10, 10, 22, .6);
+            padding: 11px 13px;
+        }
+
+        .stat-cell .k {
+            font: 8px/1 var(--sans);
+            letter-spacing: .14em;
+            text-transform: uppercase;
+            color: var(--mute);
+            margin-bottom: 5px;
+        }
+
+        .stat-cell .v {
+            font: 600 16px/1 var(--mono);
+            letter-spacing: -.03em;
+            color: var(--txt);
+        }
+
+        .stat-cell .v u {
+            font-size: 9px;
+            color: var(--mute);
+            text-decoration: none;
+            margin-left: 1px;
+        }
+
+        .lang-bars {
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+            max-height: 240px;
+            overflow-y: auto;
+        }
+
+        .lang-bar {
+            display: grid;
+            grid-template-columns: 8px 1fr auto;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+        }
+
+        .lang-bar i {
+            width: 8px;
+            height: 8px;
+            border-radius: 2px;
+        }
+
+        .lang-bar .track {
+            grid-column: 1 / -1;
+            height: 2px;
+            background: rgba(255, 255, 255, .06);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 1px;
+        }
+
+        .lang-bar .track b {
+            display: block;
+            height: 100%;
+            border-radius: 2px;
+        }
+
+        .lang-bar .pct {
+            font: 10px/1 var(--mono);
+            color: var(--mute);
+        }
+
+        /* ── HOVER TOOLTIP ── */
+        #tooltip {
+            position: absolute;
+            background: rgba(6, 12, 18, .96);
+            backdrop-filter: blur(8px);
+            border: 1px solid var(--line2);
+            border-radius: 6px;
+            padding: 8px 11px;
+            font: 11px/1.45 var(--mono);
+            color: var(--txt);
+            pointer-events: none;
+            z-index: 6;
+            box-shadow: 0 12px 30px -10px #000;
+            max-width: 320px;
+            opacity: 0;
+            transition: opacity .12s;
+            white-space: nowrap;
+        }
+
+        #tooltip.on {
+            opacity: 1;
+        }
+
+        #tooltip .name {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        #tooltip .meta {
+            color: var(--mute);
+            font-size: 10px;
+            margin-top: 3px;
+            display: flex;
+            gap: 8px;
+        }
+
+        #tooltip .meta u {
+            text-decoration: none;
+            color: var(--dim);
+        }
+
+        /* ── MINIMAP ── */
+        #minimap {
+            position: absolute;
+            right: 14px;
+            bottom: 14px;
+            width: 180px;
+            height: 120px;
+            background: rgba(4, 8, 14, .88);
+            border: 1px solid var(--line2);
+            border-radius: 6px;
+            z-index: 3;
+            cursor: pointer;
+            box-shadow: 0 12px 30px -12px #000;
+        }
+
+        #minimap.hidden {
+            display: none;
+        }
+
+        #minimap .vp {
+            position: absolute;
+            border: 1px solid rgba(62, 207, 224, .9);
+            background: rgba(62, 207, 224, .10);
+            pointer-events: none;
+            border-radius: 2px;
+            box-shadow: 0 0 12px rgba(62, 207, 224, .35);
+        }
+
+        /* ── HELP OVERLAY ── */
+        #help {
+            position: absolute;
+            inset: 0;
+            background: rgba(3, 6, 10, .72);
+            backdrop-filter: blur(6px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 110;
+        }
+
+        #help.on {
+            display: flex;
+        }
+
+        #help-modal {
+            background: #0a1218;
+            border: 1px solid var(--line2);
+            border-radius: 12px;
+            padding: 24px 28px;
+            max-width: 520px;
+            box-shadow: 0 30px 80px -20px #000;
+        }
+
+        #help-modal h2 {
+            margin: 0 0 6px;
+            font: 500 18px/1.2 var(--mono);
+            color: var(--cyan);
+        }
+
+        #help-modal p {
+            margin: 0 0 18px;
+            color: var(--mute);
+            font-size: 11px;
+        }
+
+        #help-modal table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        #help-modal td {
+            padding: 7px 0;
+            border-bottom: 1px solid #0e1a24;
+            font-size: 11.5px;
+            color: var(--dim);
+        }
+
+        #help-modal td:first-child {
+            width: 140px;
+        }
+
+        #help-modal td:last-child {
+            color: var(--txt);
+        }
+
+        #help-modal kbd {
+            font: 10px/1 var(--mono);
+            color: var(--cyan);
+            background: rgba(62, 207, 224, .10);
+            border: 1px solid rgba(62, 207, 224, .35);
+            padding: 3px 7px;
+            border-radius: 4px;
+            display: inline-block;
+            margin-right: 4px;
+        }
+
+        /* ── SCROLLBARS ── */
+        #insp::-webkit-scrollbar,
+        .info::-webkit-scrollbar,
+        .info pre::-webkit-scrollbar,
+        #search-results::-webkit-scrollbar,
+        .lang-bars::-webkit-scrollbar {
+            width: 8px;
+            height: 8px
+        }
+
+        #insp::-webkit-scrollbar-thumb,
+        .info::-webkit-scrollbar-thumb,
+        .info pre::-webkit-scrollbar-thumb,
+        #search-results::-webkit-scrollbar-thumb,
+        .lang-bars::-webkit-scrollbar-thumb {
+            background: #12202e;
+            border-radius: 4px
+        }
+
+        @media (max-width: 1100px) {
+            #app {
+                grid-template-columns: 1fr 320px;
+            }
+            #minimap {
+                display: none;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app">
+        <div id="wrap">
+            <canvas id="map"></canvas>
+            <div id="map3d"></div>
+            <canvas id="labels3d"></canvas>
+
+            <!-- Empty state -->
+            <div id="empty">
+                <h1>Code<span>Scope</span></h1>
+                <p>Point at any folder on your machine. It walks the tree, counts lines, and paints the codebase as a
+                    zoomable 2D blueprint and 3D code city. Zoom into any file to see its complete source.</p>
+                <button id="btn-pick">Open Folder</button>
+                <div class="demo" id="btn-demo">or try a demo tree →</div>
+                <div id="progress"></div>
+                <div id="progress-bar"><i></i></div>
+            </div>
+
+            <!-- Top HUD -->
+            <div id="hud-top">
+                <span id="brand">◆ CodeScope</span>
+                <div class="mode-toggle">
+                    <button id="btn-2d" class="mode-btn active" title="2D Blueprint Treemap (Press 2)">
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h11A1.5 1.5 0 0 1 15 2.5v11a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 13.5v-11zM2.5 2a.5.5 0 0 0-.5.5V7h5V2H2.5zM8 2v5h6V2.5a.5.5 0 0 0-.5-.5H8zm6 6H8v6h5.5a.5.5 0 0 0 .5-.5V8zm-7 6V8H2v5.5a.5.5 0 0 0 .5.5H7z"/>
+                        </svg>
+                        <span>2D</span>
+                    </button>
+                    <button id="btn-3d" class="mode-btn" title="3D Code City (Press 3)">
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                            <path d="m8.186 1.113.1.057 6.25 3.606a.75.75 0 0 1 .364.646v7.156a.75.75 0 0 1-.364.646l-6.25 3.606a.75.75 0 0 1-.772 0l-6.25-3.606A.75.75 0 0 1 .85 12.578V5.422a.75.75 0 0 1 .364-.646l6.25-3.606a.75.75 0 0 1 .722-.057zM8 2.373 2.54 5.524 8 8.675l5.46-3.151L8 2.373zM2.35 6.945v5.043L7.25 14.81V9.771L2.35 6.945zm6.4 7.865 4.9-2.822V6.945L8.75 9.771v5.039z"/>
+                        </svg>
+                        <span>3D</span>
+                    </button>
+                </div>
+                <span id="crumbs"></span>
+                <span id="zoom">100%</span>
+                <button class="hud-btn" id="btn-stats" title="Toggle stats panel (S)">
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M1 13.5V2.5h2v11H1zm4 0V6.5h2v7H5zm4 0v-4h2v4H9zm4 0V3.5h2v10h-2z"/></svg>
+                    Stats
+                </button>
+                <button class="hud-btn" id="btn-search">
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/></svg>
+                    Search <kbd>⌘K</kbd>
+                </button>
+                <button class="hud-btn" id="btn-open">Open Folder</button>
+            </div>
+
+            <!-- Bottom-left HUD -->
+            <div id="hud-bot">
+                <button id="zin" title="Zoom in">+</button>
+                <button id="zout" title="Zoom out">−</button>
+                <button id="zfit" title="Fit (0)">⤢</button>
+                <button id="zview" title="Reset View (V)" style="font-size:12px">⟲</button>
+            </div>
+
+            <!-- Hint -->
+            <div id="hint">
+                <div id="hint-nav">scroll to zoom · drag to pan</div>
+                <div id="hint-click">click a block to fly in / inspect</div>
+                <div><kbd>2</kbd> 2D · <kbd>3</kbd> 3D · <kbd>⌘K</kbd> search · <kbd>?</kbd> help</div>
+            </div>
+
+            <!-- Stats panel (left) -->
+            <div id="stats-panel">
+                <h4>Overview <span id="stats-root">—</span></h4>
+                <div class="stat-grid" id="stat-grid"></div>
+                <h4>Languages <span>by LOC</span></h4>
+                <div class="lang-bars" id="lang-bars"></div>
+            </div>
+
+            <!-- Tooltip -->
+            <div id="tooltip"></div>
+
+            <!-- Minimap -->
+            <canvas id="minimap" class="hidden"></canvas>
+
+            <!-- Search overlay -->
+            <div id="search-overlay">
+                <div id="search-modal">
+                    <div id="search-head">
+                        <span class="glass">⌕</span>
+                        <input id="search-input" placeholder="Search files by name or path…" autocomplete="off" spellcheck="false">
+                        <span id="search-count"></span>
+                        <kbd>esc</kbd>
+                    </div>
+                    <div id="search-results"></div>
+                </div>
+            </div>
+
+            <!-- Help overlay -->
+            <div id="help">
+                <div id="help-modal">
+                    <h2>Keyboard & mouse</h2>
+                    <p>Everything you need to fly around a codebase.</p>
+                    <table>
+                        <tr><td><kbd>⌘K</kbd>/<kbd>Ctrl K</kbd></td><td>Search files</td></tr>
+                        <tr><td><kbd>2</kbd> / <kbd>3</kbd></td><td>Switch 2D blueprint / 3D city</td></tr>
+                        <tr><td><kbd>s</kbd></td><td>Toggle stats panel</td></tr>
+                        <tr><td><kbd>v</kbd></td><td>Reset view</td></tr>
+                        <tr><td><kbd>0</kbd></td><td>Fit whole map</td></tr>
+                        <tr><td><kbd>+</kbd> / <kbd>−</kbd></td><td>Zoom in / out</td></tr>
+                        <tr><td><kbd>esc</kbd></td><td>Back one level</td></tr>
+                        <tr><td><kbd>?</kbd></td><td>This help</td></tr>
+                        <tr><td>Scroll</td><td>Zoom toward cursor</td></tr>
+                        <tr><td>Drag</td><td>Pan / orbit</td></tr>
+                        <tr><td>Click block</td><td>Fly in · inspect</td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <aside id="insp">
+            <div class="tabs"><span class="on">Inspector</span><span>Search</span><span>History</span></div>
+            <div class="info" id="insp-body"></div>
+            <div class="insp-foot" id="insp-foot">
+                <button class="foot-btn primary" id="btn-open-editor" title="Open in system editor">⎘ Open</button>
+                <button class="foot-btn" id="btn-copy-path">⧉ Copy path</button>
+                <button class="foot-btn" id="btn-copy-content">⧉ Copy file</button>
+                <button class="foot-btn" id="btn-up" style="margin-left:auto" title="Go to parent (Esc)">↑ Up</button>
+            </div>
+        </aside>
+    </div>
+
+    <script>
+        'use strict';
+
+        /* ══════════════════════════════════════════════════════════════════
+           1. LANGUAGE MAP
+           ══════════════════════════════════════════════════════════════════ */
+        const LANGS = {
+            js: 'JavaScript', mjs: 'JavaScript', cjs: 'JavaScript', jsx: 'JavaScript',
+            ts: 'TypeScript', tsx: 'TypeScript', mts: 'TypeScript', cts: 'TypeScript',
+            py: 'Python', pyi: 'Python', rs: 'Rust', go: 'Go', java: 'Java', kt: 'Kotlin', kts: 'Kotlin',
+            c: 'C', h: 'C', cc: 'C++', cpp: 'C++', cxx: 'C++', hpp: 'C++', hh: 'C++', hxx: 'C++',
+            cs: 'C#', rb: 'Ruby', php: 'PHP', swift: 'Swift', scala: 'Scala', dart: 'Dart',
+            sh: 'Shell', bash: 'Shell', zsh: 'Shell', fish: 'Shell',
+            html: 'HTML', htm: 'HTML', css: 'CSS', scss: 'SCSS', sass: 'Sass', less: 'Less',
+            json: 'JSON', yaml: 'YAML', yml: 'YAML', toml: 'TOML', xml: 'XML', svg: 'XML',
+            md: 'Markdown', mdx: 'Markdown', sql: 'SQL',
+            vue: 'Vue', svelte: 'Svelte', lua: 'Lua', zig: 'Zig',
+            ex: 'Elixir', exs: 'Elixir', hs: 'Haskell', r: 'R', jl: 'Julia',
+        };
+        const LANG_COLORS = {
+            JavaScript: '#f1e05a', TypeScript: '#3178c6', Python: '#3572A5', Rust: '#dea584',
+            Go: '#00ADD8', Java: '#b07219', 'C++': '#f34b7d', 'C': '#8b8b8b', 'C#': '#178600',
+            Ruby: '#701516', PHP: '#4F5D95', Swift: '#F05138', Kotlin: '#A97BFF',
+            Shell: '#89e051', HTML: '#e34c26', CSS: '#563d7c', SCSS: '#c6538c',
+            JSON: '#cbcb41', YAML: '#cb171e', Markdown: '#083fa1', SQL: '#e38c00',
+            Vue: '#41b883', Svelte: '#ff3e00', Dart: '#00B4AB', Zig: '#ec915c',
+        };
+        const DEFAULT_COLOR = '#4b5563';
+
+        function extOf(name) { const i = name.lastIndexOf('.'); return i < 0 ? '' : name.slice(i + 1).toLowerCase(); }
+        function langOf(name) { return LANGS[extOf(name)] || null; }
+
+        /* ══════════════════════════════════════════════════════════════════
+           2. IGNORE RULES
+           ══════════════════════════════════════════════════════════════════ */
+        const IGNORE_DIRS = new Set([
+            'node_modules', '.git', '.hg', '.svn', 'dist', 'build', 'target', '__pycache__',
+            '.next', '.nuxt', '.svelte-kit', 'vendor', 'coverage', 'out', '.venv', 'venv', 'env',
+            '.idea', '.vscode', '.cache', '.turbo', '.parcel-cache', '.pytest_cache', '.mypy_cache',
+            '.gradle', '.dart_tool', 'Pods', 'DerivedData', 'bin', 'obj', '.terraform',
+            '.serverless', '.angular', '.astro', '.output', '.nx', '.yarn', '.pnpm-store',
+        ]);
+        const IGNORE_FILE_RE = /\.(min\.(js|css)|map|lock|png|jpe?g|gif|svg|ico|webp|bmp|tiff?|woff2?|ttf|otf|eot|pdf|zip|tar|gz|bz2|7z|rar|mp[34]|wav|ogg|webm|mov|avi|exe|dll|so|dylib|bin|class|jar|war)$/i;
+        const IGNORE_NAMES = new Set(['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'Cargo.lock', '.DS_Store']);
+        function ignored(name) { return IGNORE_NAMES.has(name) || IGNORE_FILE_RE.test(name); }
+
+        /* ══════════════════════════════════════════════════════════════════
+           3. FILE SCANNER
+           ══════════════════════════════════════════════════════════════════ */
+        const MAX_FILES = 20000;
+        const MAX_FILE_SIZE = 2_000_000;
+        const MAX_CONTENT_BYTES = 500_000;
+
+        function isBinary(u8) {
+            const n = Math.min(u8.length, 8192);
+            for (let i = 0; i < n; i++) if (u8[i] === 0) return true;
+            return false;
+        }
+        function countLines(u8) {
+            let n = 0;
+            for (let i = 0; i < u8.length; i++) if (u8[i] === 10) n++;
+            if (u8.length && u8[u8.length - 1] !== 10) n++;
+            return n;
+        }
+
+        async function scanFolder(rootHandle, onProgress) {
+            const entries = [];
+            let truncated = false;
+
+            async function walk(dirHandle, prefix) {
+                if (entries.length >= MAX_FILES) { truncated = true; return; }
+                for await (const [name, handle] of dirHandle.entries()) {
+                    if (entries.length >= MAX_FILES) { truncated = true; break; }
+                    if (name.startsWith('.') && name !== '.env') continue;
+                    const rel = prefix ? prefix + '/' + name : name;
+                    if (handle.kind === 'directory') {
+                        if (IGNORE_DIRS.has(name)) continue;
+                        try { await walk(handle, rel); } catch (e) { }
+                    } else {
+                        if (ignored(name)) continue;
+                        try {
+                            const f = await handle.getFile();
+                            entries.push({ path: rel, name, size: f.size, handle, loc: 0, binary: false, content: null });
+                        } catch (e) { }
+                    }
+                    if (onProgress && entries.length % 100 === 0) onProgress(entries.length);
+                }
+            }
+
+            await walk(rootHandle, '');
+            onProgress && onProgress(entries.length, true);
+
+            const CONCURRENCY = 12;
+            let cursor = 0, done = 0;
+
+            async function worker() {
+                while (cursor < entries.length) {
+                    const e = entries[cursor++];
+                    try {
+                        if (e.size > MAX_FILE_SIZE) {
+                            e.binary = true; e.loc = 0; e.content = null;
+                        } else {
+                            const f = await e.handle.getFile();
+                            const buf = await f.arrayBuffer();
+                            const u8 = new Uint8Array(buf);
+                            if (isBinary(u8)) { e.binary = true; e.loc = 0; e.content = null; }
+                            else {
+                                e.loc = countLines(u8);
+                                if (e.size <= MAX_CONTENT_BYTES) {
+                                    e.content = new TextDecoder('utf-8', { fatal: false }).decode(u8);
+                                } else {
+                                    e.content = new TextDecoder('utf-8', { fatal: false }).decode(u8.subarray(0, MAX_CONTENT_BYTES));
+                                    e.truncatedContent = true;
+                                }
+                            }
+                        }
+                    } catch (err) { e.binary = true; e.loc = 0; e.content = null; }
+                    e.handle = null;
+                    done++;
+                    if (onProgress && done % 25 === 0) onProgress(done, false, entries.length);
+                }
+            }
+
+            await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+            return { entries, truncated };
+        }
+
+        /* ══════════════════════════════════════════════════════════════════
+           4. TREE BUILDER
+           ══════════════════════════════════════════════════════════════════ */
+        function buildTree(entries, rootName) {
+            const root = { name: rootName, path: '', isDir: true, children: new Map(), loc: 0 };
+            for (const e of entries) {
+                const parts = e.path.split('/');
+                let node = root;
+                root.loc += e.loc;
+                for (let i = 0; i < parts.length - 1; i++) {
+                    let c = node.children.get(parts[i]);
+                    if (!c) {
+                        c = { name: parts[i], path: parts.slice(0, i + 1).join('/'), isDir: true, children: new Map(), loc: 0 };
+                        node.children.set(parts[i], c);
+                    }
+                    c.loc += e.loc;
+                    node = c;
+                }
+                const leafName = parts[parts.length - 1];
+                node.children.set(leafName, {
+                    name: leafName, path: e.path, isDir: false, children: null,
+                    loc: e.loc, size: e.size, binary: e.binary,
+                    content: e.content || '',
+                    truncatedContent: !!e.truncatedContent,
+                    lang: langOf(leafName),
+                });
+            }
+            return root;
+        }
+
+        /* ══════════════════════════════════════════════════════════════════
+           5. LAYOUT
+           ══════════════════════════════════════════════════════════════════ */
+        let WORLD_W = 3200, WORLD_H = 2200;
+        const PAD = 2;
+        const ALL = [];
+        let FILE_INDEX = [];
+
+        const PALETTE = {
+            teal:   { line: '#5fc7b8', wall: 0x5fc7b8, wallHex: '#5fc7b8', fill: '#080d14', tag: '#5fc7b8' },
+            pink:   { line: '#d67ba0', wall: 0xd67ba0, wallHex: '#d67ba0', fill: '#080d14', tag: '#d67ba0' },
+            orange: { line: '#d49367', wall: 0xd49367, wallHex: '#d49367', fill: '#080d14', tag: '#d49367' },
+            purple: { line: '#9d85c9', wall: 0x9d85c9, wallHex: '#9d85c9', fill: '#080d14', tag: '#9d85c9' },
+            green:  { line: '#7ec16e', wall: 0x7ec16e, wallHex: '#7ec16e', fill: '#080d14', tag: '#7ec16e' },
+            sky:    { line: '#7fa8d4', wall: 0x7fa8d4, wallHex: '#7fa8d4', fill: '#080d14', tag: '#7fa8d4' },
+            coral:  { line: '#d17870', wall: 0xd17870, wallHex: '#d17870', fill: '#080d14', tag: '#d17870' },
+            yellow: { line: '#c9b060', wall: 0xc9b060, wallHex: '#c9b060', fill: '#080d14', tag: '#c9b060' },
+            cyan:   { line: '#66c5d4', wall: 0x66c5d4, wallHex: '#66c5d4', fill: '#080d14', tag: '#66c5d4' },
+        };
+        const PALETTE_KEYS = ['teal', 'pink', 'orange', 'purple', 'green', 'sky', 'coral', 'yellow', 'cyan'];
+
+        function layout(root) {
+            ALL.length = 0;
+            const totalLoc = root.loc || 1000;
+            const targetArea = Math.max(7000000, totalLoc * 7500);
+            const w = Math.round(Math.sqrt(targetArea * 1.5));
+            const h = Math.round(w / 1.45);
+            WORLD_W = Math.max(3400, w);
+            WORLD_H = Math.max(2400, h);
+            buildRect(root, 0, 0, WORLD_W, WORLD_H, 0, 'teal', null);
+            buildFileIndex();
+            if (currentMode === '3d' && typeof Scope3D !== 'undefined' && Scope3D.initialized) {
+                Scope3D.buildScene(ALL);
+            }
+        }
+
+        function buildFileIndex() {
+            FILE_INDEX = [];
+            for (const r of ALL) {
+                if (!r.node.children) {
+                    FILE_INDEX.push({
+                        rect: r,
+                        node: r.node,
+                        path: (r.node.path || r.node.name),
+                        name: r.node.name,
+                        loc: r.node.loc || 0,
+                        color: r.color,
+                    });
+                }
+            }
+        }
+
+        function buildRect(node, x, y, w, h, depth, color, parent) {
+            const c = node.__color || color;
+            const r = { node, x, y, w, h, depth, color: c, parent, children: [] };
+            ALL.push(r);
+            if (!node.children || !node.children.size) return r;
+            if (w < 24 || h < 18) return r;
+            const iw = w - PAD * 2, ih = h - PAD * 2;
+            if (iw < 12 || ih < 12) return r;
+            const kids = [...node.children.values()];
+            const total = kids.reduce((s, c) => s + c.loc, 0);
+            if (total <= 0) return r;
+            const rects = squarify(kids.map(k => ({ node: k, area: k.loc || 1 })), iw, ih);
+            for (let i = 0; i < rects.length; i++) {
+                const cr = rects[i];
+                let nextColor = c;
+                if (depth === 0) {
+                    nextColor = PALETTE_KEYS[i % PALETTE_KEYS.length];
+                } else if (depth === 1 && cr.node.isDir) {
+                    nextColor = PALETTE_KEYS[(PALETTE_KEYS.indexOf(c) + i + 1) % PALETTE_KEYS.length];
+                }
+                const child = buildRect(cr.node, x + PAD + cr.x, y + PAD + cr.y, cr.w, cr.h, depth + 1, nextColor, r);
+                r.children.push(child);
+            }
+            return r;
+        }
+        function squarify(items, W, H) {
+            const total = items.reduce((s, i) => s + i.area, 0);
+            const k = (W * H) / total;
+            const data = items.map(i => ({ node: i.node, area: i.area * k }))
+                .filter(d => d.area > 0)
+                .sort((a, b) => b.area - a.area);
+            const out = [];
+            let x = 0, y = 0, w = W, h = H, row = [];
+            const worst = (r, side) => {
+                if (!r.length) return Infinity;
+                let mx = -Infinity, mn = Infinity, sum = 0;
+                for (const it of r) { if (it.area > mx) mx = it.area; if (it.area < mn) mn = it.area; sum += it.area; }
+                return Math.max(side * side * mx / (sum * sum), sum * sum / (side * side * mn));
+            };
+            const flush = () => {
+                if (!row.length) return;
+                const sum = row.reduce((s, it) => s + it.area, 0);
+                if (w >= h) {
+                    const cw = sum / h;
+                    let ry = y;
+                    for (const it of row) {
+                        const ch = it.area / cw;
+                        out.push({ node: it.node, x, y: ry, w: cw, h: ch });
+                        ry += ch;
+                    }
+                    x += cw; w -= cw;
+                } else {
+                    const rh = sum / w;
+                    let rx = x;
+                    for (const it of row) {
+                        const rw = it.area / rh;
+                        out.push({ node: it.node, x: rx, y, w: rw, h: rh });
+                        rx += rw;
+                    }
+                    y += rh; h -= rh;
+                }
+                row = [];
+            };
+            for (const it of data) {
+                const side = Math.min(w, h);
+                if (!row.length) { row.push(it); continue; }
+                const w1 = worst(row, side);
+                const w2 = worst([...row, it], side);
+                if (w2 <= w1) row.push(it);
+                else { flush(); row.push(it); }
+            }
+            flush();
+            return out;
+        }
+
+        /* ══════════════════════════════════════════════════════════════════
+           6. TOKENIZER
+           ══════════════════════════════════════════════════════════════════ */
+        const KEYWORDS = new Set([
+            'if', 'else', 'for', 'while', 'return', 'break', 'continue', 'switch', 'case', 'default',
+            'do', 'goto', 'sizeof', 'typedef', 'struct', 'union', 'enum', 'class', 'namespace',
+            'public', 'private', 'protected', 'virtual', 'override', 'final', 'static', 'const',
+            'constexpr', 'inline', 'extern', 'volatile', 'mutable', 'template', 'typename',
+            'using', 'new', 'delete', 'this', 'nullptr', 'true', 'false', 'auto', 'void', 'int',
+            'long', 'short', 'char', 'float', 'double', 'bool', 'unsigned', 'signed', 'wchar_t',
+            'try', 'catch', 'throw', 'finally', 'operator', 'friend', 'explicit', 'export',
+            'var', 'let', 'function', 'import', 'from', 'of', 'async', 'await', 'yield', 'typeof',
+            'instanceof', 'in', 'null', 'undefined', 'get', 'set', 'extends', 'super', 'as', 'is',
+            'fn', 'mut', 'impl', 'trait', 'pub', 'mod', 'use', 'crate', 'self', 'Self', 'match',
+            'loop', 'where', 'ref', 'dyn', 'move',
+            'def', 'lambda', 'None', 'True', 'False', 'and', 'or', 'not', 'pass', 'raise', 'with',
+            'global', 'nonlocal', 'assert', 'del', 'elif', 'except',
+            'func', 'package', 'defer', 'chan', 'map', 'range', 'go', 'select', 'interface',
+            'abstract', 'synchronized', 'throws', 'volatile', 'transient', 'sealed', 'record',
+        ]);
+        const TC = {
+            kw: '#c792ea', typ: '#ffcb6b', num: '#f78c6c', str: '#c3e88d',
+            com: '#4a6b7c', pun: '#89ddff', id: '#c9d1d9', txt: '#c9d1d9', pp: '#e6b04a'
+        };
+
+        function commentStyle(lang) {
+            if (!lang) return { line: '//', block: ['/*', '*/'] };
+            if (lang === 'Python' || lang === 'Shell' || lang === 'YAML' || lang === 'Ruby') return { line: '#' };
+            if (lang === 'HTML' || lang === 'XML' || lang === 'Vue' || lang === 'Svelte') return { block: ['<!--', '-->'] };
+            if (lang === 'CSS' || lang === 'SCSS' || lang === 'Sass' || lang === 'Less') return { block: ['/*', '*/'] };
+            if (lang === 'JSON' || lang === 'Markdown') return {};
+            return { line: '//', block: ['/*', '*/'] };
+        }
+
+        function tokenize(line, style) {
+            const out = [];
+            let i = 0, n = line.length;
+            while (i < n) {
+                const c = line[i];
+                if (c === ' ' || c === '\t') {
+                    let j = i; while (j < n && (line[j] === ' ' || line[j] === '\t')) j++;
+                    out.push({ t: line.slice(i, j), c: 'txt' }); i = j; continue;
+                }
+                if (style.line && line.startsWith(style.line, i)) {
+                    out.push({ t: line.slice(i), c: 'com' }); break;
+                }
+                if (style.block && line.startsWith(style.block[0], i)) {
+                    const end = line.indexOf(style.block[1], i + style.block[0].length);
+                    if (end === -1) { out.push({ t: line.slice(i), c: 'com' }); break; }
+                    out.push({ t: line.slice(i, end + style.block[1].length), c: 'com' });
+                    i = end + style.block[1].length; continue;
+                }
+                if (c === '"' || c === "'" || c === '`') {
+                    const q = c; let j = i + 1;
+                    while (j < n && line[j] !== q) { if (line[j] === '\\') j++; j++; }
+                    j = Math.min(j + 1, n);
+                    out.push({ t: line.slice(i, j), c: 'str' }); i = j; continue;
+                }
+                if (c === '#' && (style.line === '#' || (line.trimStart() === line && /^#\s/.test(line)))) {
+                    out.push({ t: line.slice(i), c: 'pp' }); break;
+                }
+                if (/[0-9]/.test(c)) {
+                    let j = i; while (j < n && /[0-9a-fA-FxX._]/.test(line[j])) j++;
+                    out.push({ t: line.slice(i, j), c: 'num' }); i = j; continue;
+                }
+                if (/[A-Za-z_$]/.test(c)) {
+                    let j = i; while (j < n && /[A-Za-z0-9_$]/.test(line[j])) j++;
+                    const w = line.slice(i, j);
+                    let cls = 'id';
+                    if (KEYWORDS.has(w)) cls = 'kw';
+                    else if (/^[A-Z]/.test(w) && w.length > 1) cls = 'typ';
+                    else if (/^[A-Z_]{2,}$/.test(w)) cls = 'kw';
+                    out.push({ t: w, c: cls }); i = j; continue;
+                }
+                if (/[{}()\[\];,.<>=+\-*/%&|^!?:~@]/.test(c)) {
+                    let j = i; while (j < n && /[{}()\[\];,.<>=+\-*/%&|^!?:~@]/.test(line[j])) j++;
+                    out.push({ t: line.slice(i, j), c: 'pun' }); i = j; continue;
+                }
+                out.push({ t: c, c: 'txt' }); i++;
+            }
+            return out;
+        }
+
+        const MAX_TOKENS_LINES = 5000;
+        const TOK_CACHE = new WeakMap();
+        function tokensOf(node) {
+            let t = TOK_CACHE.get(node);
+            if (t) return t;
+            const src = node.content || '';
+            const lines = src.split('\n');
+            const style = commentStyle(node.lang);
+            const out = new Array(lines.length);
+            const limit = Math.min(lines.length, MAX_TOKENS_LINES);
+            for (let i = 0; i < limit; i++) out[i] = tokenize(lines[i], style);
+            for (let i = limit; i < lines.length; i++) out[i] = [];
+            TOK_CACHE.set(node, out);
+            return out;
+        }
+
+        /* ══════════════════════════════════════════════════════════════════
+           7. CAMERA + 2D RENDER
+           ══════════════════════════════════════════════════════════════════ */
+        const canvas = document.getElementById('map');
+        const ctx = canvas.getContext('2d');
+        const wrap = document.getElementById('wrap');
+
+        let vw = 0, vh = 0, dpr = 1;
+        const MIN_SCALE = 0.04, MAX_SCALE = 120;
+        const state = { view: { x: 0, y: 0, scale: 1 }, selected: null, root: null };
+        let animRAF = 0;
+
+        function resize() {
+            const r = wrap.getBoundingClientRect();
+            vw = Math.max(1, Math.floor(r.width));
+            vh = Math.max(1, Math.floor(r.height));
+            dpr = Math.min(window.devicePixelRatio || 1, 2);
+            canvas.width = Math.floor(vw * dpr);
+            canvas.height = Math.floor(vh * dpr);
+            canvas.style.width = vw + 'px';
+            canvas.style.height = vh + 'px';
+            if (typeof currentMode !== 'undefined' && currentMode === '3d' && typeof Scope3D !== 'undefined' && Scope3D.initialized) {
+                Scope3D.resize(vw, vh);
+            } else {
+                render();
+            }
+        }
+
+        function fitView(animate) {
+            if (!ALL.length) return;
+            const pad = 24;
+            const k = Math.min((vw - pad * 2) / WORLD_W, (vh - pad * 2) / WORLD_H);
+            const target = { scale: k, x: (vw - WORLD_W * k) / 2, y: (vh - WORLD_H * k) / 2 };
+            if (animate) animateTo(target, 420);
+            else { state.view = target; render(); updateHud(); }
+        }
+        function zoomAt(mx, my, factor) {
+            cancelAnimationFrame(animRAF);
+            const cur = state.view;
+            const next = Math.max(MIN_SCALE, Math.min(MAX_SCALE, cur.scale * factor));
+            const k = next / cur.scale;
+            state.view = { scale: next, x: mx - (mx - cur.x) * k, y: my - (my - cur.y) * k };
+            render(); updateHud();
+        }
+
+        const READ_SCALE = 2.4;
+        function flyTo(rect) {
+            const pad = 60;
+            const fitScale = Math.min((vw - pad * 2) / rect.w, (vh - pad * 2) / rect.h, MAX_SCALE);
+            const isLeaf = !rect.node.children;
+            const minScale = isLeaf ? READ_SCALE : 0;
+            const ts = Math.max(fitScale, minScale);
+            const cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
+            const targetX = (rect.w * ts < vw - pad * 2) ? (vw / 2 - cx * ts) : (pad - rect.x * ts);
+            const targetY = (rect.h * ts < vh - pad * 2) ? (vh / 2 - cy * ts) : (pad - rect.y * ts);
+            animateTo({ scale: ts, x: targetX, y: targetY }, 480);
+        }
+        function animateTo(target, dur) {
+            cancelAnimationFrame(animRAF);
+            const from = { ...state.view };
+            const t0 = performance.now();
+            const step = now => {
+                const t = Math.min(1, (now - t0) / dur);
+                const e = 1 - Math.pow(1 - t, 3);
+                state.view = {
+                    x: from.x + (target.x - from.x) * e,
+                    y: from.y + (target.y - from.y) * e,
+                    scale: from.scale + (target.scale - from.scale) * e,
+                };
+                render(); updateHud();
+                if (t < 1) animRAF = requestAnimationFrame(step);
+            };
+            animRAF = requestAnimationFrame(step);
+        }
+
+        const TEXT_LOD = 0.85;
+        const BAR_LOD = 0.02;
+
+        function render() {
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.fillStyle = '#03060a';
+            ctx.fillRect(0, 0, vw, vh);
+
+            if (!ALL.length) return;
+            const { x: vx, y: vy, scale } = state.view;
+
+            ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * vx, dpr * vy);
+            for (let i = 0; i < ALL.length; i++) {
+                const r = ALL[i];
+                const sw = r.w * scale, sh = r.h * scale;
+                if (sw < 0.4 || sh < 0.4) continue;
+                const sx = r.x * scale + vx, sy = r.y * scale + vy;
+                if (sx + sw < -2 || sy + sh < -2 || sx > vw + 2 || sy > vh + 2) continue;
+                const leaf = !r.node.children;
+                const pal = PALETTE[r.color] || PALETTE.teal;
+                ctx.fillStyle = r.node.binary ? '#05080d' : (leaf ? '#08111a' : pal.fill);
+                ctx.fillRect(r.x, r.y, r.w, r.h);
+            }
+
+            const lw = 1 / scale, half = lw / 2;
+            for (let i = 0; i < ALL.length; i++) {
+                const r = ALL[i];
+                const sw = r.w * scale, sh = r.h * scale;
+                if (sw < 3 || sh < 3) continue;
+                const sx = r.x * scale + vx, sy = r.y * scale + vy;
+                if (sx + sw < -2 || sy + sh < -2 || sx > vw + 2 || sy > vh + 2) continue;
+                const pal = PALETTE[r.color] || PALETTE.teal;
+                ctx.strokeStyle = r.node.binary ? 'rgba(62,207,224,.25)' : pal.line;
+                ctx.lineWidth = lw;
+                ctx.strokeRect(r.x + half, r.y + half, r.w - lw, r.h - lw);
+            }
+
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.textBaseline = 'top';
+            renderCode(vx, vy, scale);
+
+            ctx.textBaseline = 'middle';
+            const maxD = labelDepthFor(scale);
+
+            for (let i = 0; i < ALL.length; i++) {
+                const r = ALL[i];
+                if (!r.node.children || r.depth > maxD) continue;
+                const sw = r.w * scale, sh = r.h * scale;
+                if (sw < 28 || sh < 14) continue;
+                const sx = r.x * scale + vx, sy = r.y * scale + vy;
+                if (sx + sw < 0 || sy + sh < 0 || sx > vw || sy > vh) continue;
+
+                const pal = PALETTE[r.color] || PALETTE.teal;
+                let label = r.node.name;
+                const fs = Math.max(9, Math.min(12, Math.round(9.5 + (scale > 1 ? 1 : 0))));
+                ctx.font = `600 ${fs}px ui-monospace,"SF Mono",Menlo,monospace`;
+                let tw = ctx.measureText(label).width;
+                const maxW = sw - 10;
+                if (tw > maxW) {
+                    while (label.length > 2 && ctx.measureText(label + '…').width > maxW) label = label.slice(0, -1);
+                    label += '…';
+                    tw = ctx.measureText(label).width;
+                }
+                if (maxW >= 14 && label.length > 0) {
+                    const badgeW = tw + 10;
+                    const badgeH = fs + 6;
+                    ctx.fillStyle = 'rgba(7, 13, 20, 0.94)';
+                    ctx.strokeStyle = pal.line;
+                    ctx.lineWidth = 1;
+                    drawPill(ctx, sx + 4, sy + 3, badgeW, badgeH, 4);
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText(label, sx + 9, sy + 3 + badgeH / 2);
+                }
+            }
+
+            for (let i = 0; i < ALL.length; i++) {
+                const r = ALL[i];
+                if (r.node.children || r.depth > maxD + 2) continue;
+                const sw = r.w * scale, sh = r.h * scale;
+                if (sw < 20 || sh < 8) continue;
+                const sx = r.x * scale + vx, sy = r.y * scale + vy;
+                if (sx + sw < 0 || sy + sh < 0 || sx > vw || sy > vh) continue;
+
+                let label = r.node.name;
+                const fs = Math.max(8, Math.min(11, sw > 60 ? 10 : 8.5));
+                ctx.font = `500 ${fs}px ui-monospace,"SF Mono",Menlo,monospace`;
+                let tw = ctx.measureText(label).width;
+                const maxW = sw - 8;
+                if (tw > maxW) {
+                    while (label.length > 2 && ctx.measureText(label + '…').width > maxW) label = label.slice(0, -1);
+                    label += '…';
+                    tw = ctx.measureText(label).width;
+                }
+
+                if (sw >= 38 && sh >= 16) {
+                    const badgeW = Math.min(sw - 4, tw + 8);
+                    const badgeH = fs + 5;
+                    ctx.fillStyle = 'rgba(8, 14, 22, 0.92)';
+                    ctx.strokeStyle = 'rgba(62, 207, 224, 0.35)';
+                    ctx.lineWidth = 1;
+                    drawPill(ctx, sx + 2, sy + 2, badgeW, badgeH, 3);
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.fillStyle = '#e2f4f8';
+                    ctx.fillText(label, sx + 6, sy + 2 + badgeH / 2);
+                } else if (sw >= 20 && sh >= 8 && scale >= 0.05) {
+                    ctx.fillStyle = 'rgba(7, 13, 20, 0.88)';
+                    const mw = Math.min(sw - 2, tw + 4);
+                    drawPill(ctx, sx + 1, sy + 1, mw, fs + 3, 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#bce6f2';
+                    ctx.fillText(label, sx + 3, sy + 1 + (fs + 3) / 2);
+                }
+            }
+
+            if (state.selected) {
+                const r = state.selected;
+                const sx = r.x * scale + vx, sy = r.y * scale + vy;
+                const sw = r.w * scale, sh = r.h * scale;
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+                ctx.strokeRect(sx + 1, sy + 1, sw - 2, sh - 2);
+                ctx.strokeStyle = 'rgba(62,207,224,.6)'; ctx.lineWidth = 1;
+                ctx.strokeRect(sx - 1, sy - 1, sw + 2, sh + 2);
+            }
+
+            renderMinimap();
+        }
+
+        function renderCode(vx, vy, scale) {
+            if (scale < BAR_LOD) return;
+            ctx.textBaseline = 'top';
+
+            for (let i = 0; i < ALL.length; i++) {
+                const r = ALL[i];
+                if (r.node.children || r.node.binary || !r.node.content) continue;
+                const sw = r.w * scale, sh = r.h * scale;
+                if (sw < 10 || sh < 6) continue;
+                const sx = r.x * scale + vx, sy = r.y * scale + vy;
+                if (sx + sw < 0 || sy + sh < 0 || sx > vw || sy > vh) continue;
+
+                const tokens = tokensOf(r.node);
+                if (!tokens || !tokens.length) continue;
+                const totalLines = tokens.length;
+
+                const headerH = (sw > 40 && sh > 24) ? 19 : 2;
+                const topPad = headerH + 2;
+                const availW = sw - 12;
+                const availH = sh - topPad - 3;
+                if (availH < 3 || availW < 8) continue;
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(sx + 1, sy + 1, sw - 2, sh - 2);
+                ctx.clip();
+
+                const lineStep = availH / totalLines;
+                const fs = Math.max(1.0, Math.min(16, lineStep * 0.78));
+                const showText = lineStep >= 5.0;
+
+                const firstVisible = Math.max(0, Math.floor((-sy - topPad) / lineStep));
+                const lastVisible = Math.min(totalLines, Math.ceil((vh - sy - topPad) / lineStep) + 1);
+
+                if (showText) {
+                    ctx.font = `${fs.toFixed(1)}px ui-monospace,"SF Mono",Menlo,Consolas,monospace`;
+                    const measCache = getMeasureCache(fs.toFixed(1));
+                    for (let j = firstVisible; j < lastVisible; j++) {
+                        const line = tokens[j];
+                        if (!line || !line.length) continue;
+                        const ly = sy + topPad + j * lineStep;
+                        let lx = sx + 8;
+                        const colRight = sx + sw - 6;
+                        for (let k = 0; k < line.length; k++) {
+                            const tk = line[k];
+                            if (tk.c === 'txt') { lx += measureCached(measCache, tk.t); continue; }
+                            ctx.fillStyle = TC[tk.c] || TC.id;
+                            ctx.fillText(tk.t, lx, ly);
+                            lx += measureCached(measCache, tk.t);
+                            if (lx > colRight) break;
+                        }
+                    }
+                } else {
+                    const barH = Math.max(0.7, Math.min(3.0, lineStep * 0.75));
+                    const charW = Math.max(0.4, Math.min(2.5, availW / 85));
+                    const skip = lineStep < 0.8 ? Math.ceil(0.8 / lineStep) : 1;
+                    for (let j = firstVisible; j < lastVisible; j += skip) {
+                        const line = tokens[j];
+                        if (!line || !line.length) continue;
+                        const ly = sy + topPad + j * lineStep;
+                        let lx = sx + 6;
+                        const colRight = sx + sw - 6;
+                        for (let k = 0; k < line.length; k++) {
+                            const tk = line[k];
+                            const w = Math.max(1, tk.t.length * charW);
+                            if (tk.c === 'txt') { lx += w; continue; }
+                            ctx.fillStyle = TC[tk.c] || TC.id;
+                            ctx.fillRect(lx, ly, w, barH);
+                            lx += w + 0.5;
+                            if (lx > colRight) break;
+                        }
+                    }
+                }
+                ctx.restore();
+            }
+        }
+
+        const _mc = new Map();
+        function getMeasureCache(k) { let m = _mc.get(k); if (!m) { m = new Map(); _mc.set(k, m); } return m; }
+        function measureCached(c, t) { let w = c.get(t); if (w === undefined) { w = ctx.measureText(t).width; c.set(t, w); } return w; }
+
+        function drawPill(c, x, y, w, h, r) {
+            c.beginPath();
+            if (c.roundRect) c.roundRect(x, y, w, h, r);
+            else {
+                c.moveTo(x + r, y);
+                c.lineTo(x + w - r, y);
+                c.quadraticCurveTo(x + w, y, x + w, y + r);
+                c.lineTo(x + w, y + h - r);
+                c.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+                c.lineTo(x + r, y + h);
+                c.quadraticCurveTo(x, y + h, x, y + h - r);
+                c.lineTo(x, y + r);
+                c.quadraticCurveTo(x, y, x + r, y);
+            }
+            c.closePath();
+        }
+
+        function labelDepthFor(s) {
+            if (s < 0.08) return 2;
+            if (s < 0.18) return 4;
+            if (s < 0.40) return 6;
+            if (s < 1.00) return 8;
+            return 99;
+        }
+
+        /* ══════════════════════════════════════════════════════════════════
+           7b. MINIMAP
+           ══════════════════════════════════════════════════════════════════ */
+        const minimapCanvas = document.getElementById('minimap');
+        const mmCtx = minimapCanvas.getContext('2d');
+        let mmW = 180, mmH = 120;
+        let mmDpr = 1;
+
+        function initMinimap() {
+            mmDpr = Math.min(window.devicePixelRatio || 1, 2);
+            const r = minimapCanvas.getBoundingClientRect();
+            mmW = Math.floor(r.width);
+            mmH = Math.floor(r.height);
+            minimapCanvas.width = mmW * mmDpr;
+            minimapCanvas.height = mmH * mmDpr;
+        }
+
+        function renderMinimap() {
+            if (minimapCanvas.classList.contains('hidden')) return;
+            if (!ALL.length) return;
+            if (minimapCanvas.width === 0) initMinimap();
+
+            const kx = mmW / WORLD_W;
+            const ky = mmH / WORLD_H;
+
+            mmCtx.setTransform(mmDpr, 0, 0, mmDpr, 0, 0);
+            mmCtx.fillStyle = 'rgba(4, 8, 14, 0.88)';
+            mmCtx.fillRect(0, 0, mmW, mmH);
+
+            for (let i = 0; i < ALL.length; i++) {
+                const r = ALL[i];
+                if (r.depth > 2) continue;
+                const pal = PALETTE[r.color] || PALETTE.teal;
+                mmCtx.fillStyle = r.node.children ? pal.fill : '#0a1420';
+                mmCtx.fillRect(r.x * kx, r.y * ky, r.w * kx, r.h * ky);
+            }
+
+            // viewport rect
+            const { x: vx, y: vy, scale } = state.view;
+            const vpx = -vx / scale * kx;
+            const vpy = -vy / scale * ky;
+            const vpw = vw / scale * kx;
+            const vph = vh / scale * ky;
+            mmCtx.strokeStyle = 'rgba(62, 207, 224, .9)';
+            mmCtx.lineWidth = 1.2;
+            mmCtx.fillStyle = 'rgba(62, 207, 224, .10)';
+            mmCtx.fillRect(vpx, vpy, vpw, vph);
+            mmCtx.strokeRect(vpx, vpy, vpw, vph);
+        }
+
+        minimapCanvas.addEventListener('mousedown', e => {
+            const r = minimapCanvas.getBoundingClientRect();
+            const mx = e.clientX - r.left;
+            const my = e.clientY - r.top;
+            const wx = mx / mmW * WORLD_W;
+            const wy = my / mmH * WORLD_H;
+            const { scale } = state.view;
+            state.view = { scale, x: vw / 2 - wx * scale, y: vh / 2 - wy * scale };
+            render(); updateHud();
+        });
+
+        /* ══════════════════════════════════════════════════════════════════
+           8. INTERACTION (2D)
+           ══════════════════════════════════════════════════════════════════ */
+        function hitTest(mx, my) {
+            const { x: vx, y: vy, scale } = state.view;
+            const wx = (mx - vx) / scale, wy = (my - vy) / scale;
+            for (let i = ALL.length - 1; i >= 0; i--) {
+                const r = ALL[i];
+                if (wx >= r.x && wx < r.x + r.w && wy >= r.y && wy < r.y + r.h) return r;
+            }
+            return null;
+        }
+
+        let dragging = false, dragStart = null, dragView0 = null, dragDist = 0;
+
+        canvas.addEventListener('mousedown', e => {
+            if (e.button !== 0) return;
+            cancelAnimationFrame(animRAF);
+            dragging = true; dragDist = 0;
+            dragStart = { x: e.clientX, y: e.clientY };
+            dragView0 = { ...state.view };
+            canvas.classList.add('dragging');
+        });
+        window.addEventListener('mousemove', e => {
+            if (!dragging) return;
+            const dx = e.clientX - dragStart.x, dy = e.clientY - dragStart.y;
+            dragDist = Math.max(dragDist, Math.abs(dx) + Math.abs(dy));
+            state.view = { ...state.view, x: dragView0.x + dx, y: dragView0.y + dy };
+            render(); updateHud();
+        });
+        window.addEventListener('mouseup', e => {
+            if (!dragging) return;
+            dragging = false;
+            canvas.classList.remove('dragging');
+            if (dragDist < 4) {
+                const rect = canvas.getBoundingClientRect();
+                onClick(e.clientX - rect.left, e.clientY - rect.top);
+            }
+        });
+        canvas.addEventListener('wheel', e => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+            zoomAt(mx, my, Math.exp(-e.deltaY * 0.0016));
+        }, { passive: false });
+
+        // Hover tooltip
+        const tooltipEl = document.getElementById('tooltip');
+        let hoverRAF = 0, lastHoverX = 0, lastHoverY = 0;
+        canvas.addEventListener('mousemove', e => {
+            if (dragging) {
+                tooltipEl.classList.remove('on');
+                return;
+            }
+            lastHoverX = e.clientX;
+            lastHoverY = e.clientY;
+            if (hoverRAF) return;
+            hoverRAF = requestAnimationFrame(() => {
+                hoverRAF = 0;
+                const r = canvas.getBoundingClientRect();
+                const mx = lastHoverX - r.left;
+                const my = lastHoverY - r.top;
+                const hit = hitTest(mx, my);
+                if (!hit) { tooltipEl.classList.remove('on'); return; }
+                const pal = PALETTE[hit.color] || PALETTE.teal;
+                const path = pathOf(hit.node).join(' / ');
+                const sizeStr = hit.node.size != null ? fmtBytes(hit.node.size) : '';
+                const langStr = hit.node.lang || (hit.node.children ? 'folder' : '—');
+                tooltipEl.innerHTML = `
+                    <div class="name"><span style="display:inline-block;width:7px;height:7px;background:${pal.line};border-radius:2px;margin-right:6px;vertical-align:0"></span>${esc(hit.node.name)}</div>
+                    <div class="meta">
+                        <span><u>${hit.node.loc.toLocaleString()}</u> loc</span>
+                        ${sizeStr ? `<span>·</span><span><u>${sizeStr}</u></span>` : ''}
+                        <span>·</span><span><u>${langStr}</u></span>
+                    </div>
+                    <div class="meta" style="margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px">${esc(path)}</div>
+                `;
+                tooltipEl.classList.add('on');
+                // position — keep inside viewport
+                const tr = tooltipEl.getBoundingClientRect();
+                let left = lastHoverX + 14;
+                let top = lastHoverY + 14;
+                if (left + tr.width > window.innerWidth - 8) left = lastHoverX - tr.width - 14;
+                if (top + tr.height > window.innerHeight - 8) top = lastHoverY - tr.height - 14;
+                tooltipEl.style.left = left + 'px';
+                tooltipEl.style.top = top + 'px';
+            });
+        });
+        canvas.addEventListener('mouseleave', () => tooltipEl.classList.remove('on'));
+
+        let pinch = null;
+        canvas.addEventListener('touchstart', e => {
+            if (e.touches.length === 2) {
+                const [a, b] = e.touches;
+                pinch = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), s: state.view.scale };
+            }
+        }, { passive: true });
+        canvas.addEventListener('touchmove', e => {
+            if (e.touches.length === 2 && pinch) {
+                const [a, b] = e.touches;
+                const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+                const ts = Math.max(MIN_SCALE, Math.min(MAX_SCALE, pinch.s * (d / pinch.d)));
+                const rect = canvas.getBoundingClientRect();
+                zoomAt((a.clientX + b.clientX) / 2 - rect.left, (a.clientY + b.clientY) / 2 - rect.top, ts / state.view.scale);
+            }
+        }, { passive: true });
+        canvas.addEventListener('touchend', () => { pinch = null; });
+
+        function onClick(mx, my) {
+            const hit = hitTest(mx, my);
+            if (!hit) return;
+            state.selected = hit;
+            flyTo(hit);
+            inspect(hit.node, hit);
+            renderCrumbs(hit.node);
+        }
+
+        /* ══════════════════════════════════════════════════════════════════
+           8b. 3D CODE CITY ENGINE
+           ══════════════════════════════════════════════════════════════════ */
+        let currentMode = '2d';
+
+        const Scope3D = {
+            initialized: false,
+            active: false,
+            container: null,
+            labelsCanvas: null,
+            labelsCtx: null,
+            scene: null,
+            camera: null,
+            renderer: null,
+            controls: null,
+            raycaster: null,
+            mouse: null,
+            cityGroup: null,
+            pickables: [],
+            animId: 0,
+            wallMatCache: new Map(),
+            roofTexCache: new Map(),
+            texCache: new Map(),
+            unitBox: null,
+
+            init() {
+                if (this.initialized) return;
+                this.container = document.getElementById('map3d');
+                this.labelsCanvas = document.getElementById('labels3d');
+                this.labelsCtx = this.labelsCanvas.getContext('2d');
+
+                if (typeof THREE === 'undefined') {
+                    console.error('Three.js not loaded yet');
+                    return;
+                }
+
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x04070c);
+                this.scene.fog = new THREE.FogExp2(0x04070c, 0.00010);
+
+                this.camera = new THREE.PerspectiveCamera(45, vw / vh, 2, 40000);
+                this.camera.position.set(WORLD_W * 0.35, 2400, WORLD_H * 0.95);
+
+                this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+                this.renderer.setSize(vw, vh);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+                this.container.appendChild(this.renderer.domElement);
+
+                if (THREE.OrbitControls) {
+                    this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+                    this.controls.enableDamping = true;
+                    this.controls.dampingFactor = 0.07;
+                    this.controls.minPolarAngle = 0.12;
+                    this.controls.maxPolarAngle = Math.PI / 2 - 0.04;
+                    this.controls.minDistance = 30;
+                    this.controls.maxDistance = 25000;
+                    this.controls.target.set(0, 180, 0);
+                }
+
+                const hemi = new THREE.HemisphereLight(0xb8d8ff, 0x201810, 0.85);
+                this.scene.add(hemi);
+                const key = new THREE.DirectionalLight(0xffffff, 0.72);
+                key.position.set(-2200, 3400, -1400);
+                this.scene.add(key);
+                const fill = new THREE.DirectionalLight(0x88aaff, 0.38);
+                fill.position.set(2400, 1200, 2200);
+                this.scene.add(fill);
+
+                const grid = new THREE.GridHelper(Math.max(WORLD_W, WORLD_H) * 1.8, 80, 0x1c3848, 0x09141e);
+                grid.position.y = -0.5;
+                this.scene.add(grid);
+
+                this.cityGroup = new THREE.Group();
+                this.scene.add(this.cityGroup);
+
+                this.raycaster = new THREE.Raycaster();
+                this.mouse = new THREE.Vector2();
+                this.unitBox = new THREE.BoxGeometry(1, 1, 1);
+
+                let pointerDownOnCanvas = false;
+                let downTime = 0, downPos = { x: 0, y: 0 };
+                this.renderer.domElement.addEventListener('pointerdown', e => {
+                    pointerDownOnCanvas = true;
+                    downTime = performance.now();
+                    downPos = { x: e.clientX, y: e.clientY };
+                    this.container.classList.add('dragging');
+                });
+                window.addEventListener('pointerup', e => {
+                    if (!pointerDownOnCanvas) return;
+                    pointerDownOnCanvas = false;
+                    this.container.classList.remove('dragging');
+                    if (this.active && performance.now() - downTime < 280) {
+                        const dist = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
+                        if (dist < 5) this.onPointerClick(e);
+                    }
+                });
+
+                this.initialized = true;
+                this.resize(vw, vh);
+                if (ALL.length) this.buildScene(ALL);
+            },
+
+            onPointerClick(e) {
+                const rect = this.renderer.domElement.getBoundingClientRect();
+                this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+                this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+                this.raycaster.setFromCamera(this.mouse, this.camera);
+                const hits = this.raycaster.intersectObjects(this.pickables, false);
+                if (hits && hits.length > 0) {
+                    const hitObj = hits[0].object;
+                    const r = hitObj.userData.rect;
+                    if (r) {
+                        state.selected = r;
+                        inspect(r.node, r);
+                        renderCrumbs(r.node);
+                        this.flyTo(r, hitObj.userData.h);
+                    }
+                }
+            },
+
+            flyTo(r, customH) {
+                if (!this.controls) return;
+                const loc = Math.max(1, r.node.loc || (r.node.content ? r.node.content.split('\n').length : 1));
+                const bh = customH != null ? customH : (!r.node.children
+                    ? Math.max(22, Math.min(1100, Math.round(22 + Math.pow(loc, 0.78) * 3.2)))
+                    : Math.max(10, 30 - r.depth * 4));
+
+                const cx = r.x + r.w / 2 - WORLD_W / 2;
+                const cz = r.y + r.h / 2 - WORLD_H / 2;
+                const targetPos = new THREE.Vector3(cx, bh, cz);
+
+                const maxDim = Math.max(r.w, r.h);
+                const viewDist = Math.max(160, maxDim * 1.35);
+                const camTarget = new THREE.Vector3(
+                    targetPos.x,
+                    targetPos.y + viewDist * 1.15,
+                    targetPos.z + viewDist * 0.75
+                );
+
+                const startPos = this.camera.position.clone();
+                const startTarget = this.controls.target.clone();
+                const t0 = performance.now();
+                const dur = 550;
+
+                const anim = now => {
+                    const t = Math.min(1, (now - t0) / dur);
+                    const e = 1 - Math.pow(1 - t, 3);
+                    this.camera.position.lerpVectors(startPos, camTarget, e);
+                    this.controls.target.lerpVectors(startTarget, targetPos, e);
+                    if (t < 1) requestAnimationFrame(anim);
+                };
+                requestAnimationFrame(anim);
+            },
+
+            resetView() {
+                if (!this.controls) return;
+                const targetPos = new THREE.Vector3(0, 180, 0);
+                const camTarget = new THREE.Vector3(WORLD_W * 0.35, 2400, WORLD_H * 0.95);
+                const startPos = this.camera.position.clone();
+                const startTarget = this.controls.target.clone();
+                const t0 = performance.now();
+                const anim = now => {
+                    const t = Math.min(1, (now - t0) / 600);
+                    const e = 1 - Math.pow(1 - t, 3);
+                    this.camera.position.lerpVectors(startPos, camTarget, e);
+                    this.controls.target.lerpVectors(startTarget, targetPos, e);
+                    if (t < 1) requestAnimationFrame(anim);
+                };
+                requestAnimationFrame(anim);
+            },
+
+            getWallMaterial(colorKey, pal) {
+                let mat = this.wallMatCache.get(colorKey);
+                if (mat) return mat;
+                mat = new THREE.MeshLambertMaterial({ color: pal.wall });
+                this.wallMatCache.set(colorKey, mat);
+                return mat;
+            },
+
+            getRoofTexture(pal) {
+                const key = 'roof_' + pal.line;
+                let cached = this.roofTexCache.get(key);
+                if (cached) return cached;
+
+                const SIZE = 256;
+                const cvs = document.createElement('canvas');
+                cvs.width = SIZE;
+                cvs.height = SIZE;
+                const c = cvs.getContext('2d');
+
+                c.fillStyle = '#080d14';
+                c.fillRect(0, 0, SIZE, SIZE);
+
+                const COLS = 10;
+                const ROWS = 10;
+                const cellW = SIZE / COLS;
+                const cellH = SIZE / ROWS;
+
+                for (let r = 0; r < ROWS; r++) {
+                    for (let ci = 0; ci < COLS; ci++) {
+                        const x = ci * cellW;
+                        const y = r * cellH;
+                        const h = ((r * 31 + ci * 17) * 2654435761) >>> 0;
+                        const v = (h % 100) / 100;
+                        const shade = 6 + Math.floor(v * 10);
+                        c.fillStyle = `rgb(${shade}, ${shade + 2}, ${shade + 6})`;
+                        c.fillRect(x + 1, y + 1, cellW - 2, cellH - 2);
+
+                        c.fillStyle = 'rgba(180, 200, 220, 0.10)';
+                        c.fillRect(x + 1, y + 1, cellW - 2, 1);
+                        c.fillRect(x + 1, y + 1, 1, cellH - 2);
+
+                        c.fillStyle = 'rgba(0, 0, 0, 0.55)';
+                        c.fillRect(x + 1, y + cellH - 2, cellW - 2, 1);
+                        c.fillRect(x + cellW - 2, y + 1, 1, cellH - 2);
+                    }
+                }
+
+                c.fillStyle = 'rgba(0, 0, 0, 0.15)';
+                c.fillRect(0, 0, SIZE, SIZE);
+
+                const tex = new THREE.CanvasTexture(cvs);
+                tex.wrapS = THREE.RepeatWrapping;
+                tex.wrapT = THREE.RepeatWrapping;
+                tex.generateMipmaps = true;
+                tex.minFilter = THREE.LinearMipmapLinearFilter;
+                tex.magFilter = THREE.LinearFilter;
+                if (this.renderer && this.renderer.capabilities) {
+                    tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+                }
+                this.roofTexCache.set(key, tex);
+                return tex;
+            },
+
+            getCodeTexture(node, pal) {
+                let tex = this.texCache.get(node);
+                if (tex) return tex;
+
+                const SIZE = 1024;
+                const cvs = document.createElement('canvas');
+                cvs.width = SIZE;
+                cvs.height = SIZE;
+                const c = cvs.getContext('2d');
+
+                const p = pal || PALETTE[node.color] || PALETTE.teal;
+                const accent = p.line || '#3ecfe0';
+
+                const bgGrad = c.createLinearGradient(0, 0, 0, SIZE);
+                bgGrad.addColorStop(0, '#070d16');
+                bgGrad.addColorStop(1, '#04080e');
+                c.fillStyle = bgGrad;
+                c.fillRect(0, 0, SIZE, SIZE);
+
+                c.save();
+                c.globalAlpha = 0.03;
+                c.strokeStyle = '#fff';
+                c.lineWidth = 40;
+                for (let i = -SIZE; i < SIZE * 2; i += 180) {
+                    c.beginPath();
+                    c.moveTo(i, 0);
+                    c.lineTo(i + SIZE, SIZE);
+                    c.stroke();
+                }
+                c.restore();
+
+                c.strokeStyle = accent;
+                c.lineWidth = 6;
+                c.strokeRect(6, 6, SIZE - 12, SIZE - 12);
+                c.strokeStyle = 'rgba(255,255,255,0.18)';
+                c.lineWidth = 2;
+                c.strokeRect(14, 14, SIZE - 28, SIZE - 28);
+
+                const HDR = 56;
+                c.fillStyle = '#0a1320';
+                c.fillRect(16, 16, SIZE - 32, HDR);
+                c.fillStyle = accent;
+                c.fillRect(16, 16 + HDR - 2, SIZE - 32, 2);
+                c.fillStyle = accent;
+                c.fillRect(28, 26, 6, HDR - 20);
+
+                c.font = 'bold 22px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+                c.fillStyle = '#ffffff';
+                c.textBaseline = 'middle';
+                const maxNameW = SIZE - 260;
+                let displayName = node.name;
+                while (displayName.length > 4 && c.measureText(displayName).width > maxNameW) {
+                    displayName = displayName.slice(0, -1);
+                }
+                if (displayName !== node.name) displayName += '…';
+                c.fillText(displayName, 44, 44);
+
+                const loc = node.loc || (node.content ? node.content.split('\n').length : 0);
+                const sizeText = `${loc.toLocaleString()} loc`;
+                c.font = '500 16px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+                c.fillStyle = '#64748b';
+                c.textAlign = 'right';
+                c.fillText(sizeText, SIZE - 40, 44);
+                c.textAlign = 'left';
+
+                const GUTTER = 76;
+                const CODE_TOP = 16 + HDR + 12;
+                const CODE_BOTTOM = SIZE - 20;
+                const CODE_LEFT = GUTTER + 12;
+                const CODE_RIGHT = SIZE - 24;
+
+                c.fillStyle = '#03060b';
+                c.fillRect(16, 16 + HDR, GUTTER, CODE_BOTTOM - (16 + HDR));
+                c.fillStyle = 'rgba(255,255,255,0.06)';
+                c.fillRect(16 + GUTTER, 16 + HDR, 1, CODE_BOTTOM - (16 + HDR));
+
+                const toks = tokensOf(node);
+                const totalLines = toks ? toks.length : 0;
+                const MAX_LINES = 62;
+                const n = Math.min(totalLines, MAX_LINES);
+                const lineH = (CODE_BOTTOM - CODE_TOP) / MAX_LINES;
+
+                c.textBaseline = 'middle';
+
+                for (let i = 0; i < n; i++) {
+                    const ly = CODE_TOP + i * lineH + lineH / 2;
+                    c.font = '13px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+                    c.fillStyle = '#2a3a4a';
+                    c.textAlign = 'right';
+                    c.fillText(String(i + 1), 16 + GUTTER - 10, ly);
+                    c.textAlign = 'left';
+
+                    const line = toks[i];
+                    if (!line || !line.length) continue;
+                    c.font = '14px "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+                    let lx = CODE_LEFT;
+                    for (let j = 0; j < line.length; j++) {
+                        const tk = line[j];
+                        c.fillStyle = TC[tk.c] || '#cbd5e1';
+                        c.fillText(tk.t, lx, ly);
+                        lx += c.measureText(tk.t).width;
+                        if (lx > CODE_RIGHT) break;
+                    }
+                }
+
+                if (totalLines > MAX_LINES) {
+                    const fadeH = 60;
+                    const fadeGrad = c.createLinearGradient(0, CODE_BOTTOM - fadeH, 0, CODE_BOTTOM);
+                    fadeGrad.addColorStop(0, 'rgba(4,8,14,0)');
+                    fadeGrad.addColorStop(1, 'rgba(4,8,14,0.95)');
+                    c.fillStyle = fadeGrad;
+                    c.fillRect(16, CODE_BOTTOM - fadeH, SIZE - 32, fadeH);
+
+                    c.fillStyle = accent;
+                    c.font = 'italic 14px ui-monospace, "SF Mono", Menlo, Consolas, monospace';
+                    c.textAlign = 'center';
+                    c.fillText(`+ ${(totalLines - MAX_LINES).toLocaleString()} more lines · click to inspect`, SIZE / 2, CODE_BOTTOM - 12);
+                    c.textAlign = 'left';
+                }
+
+                tex = new THREE.CanvasTexture(cvs);
+                tex.generateMipmaps = true;
+                tex.minFilter = THREE.LinearMipmapLinearFilter;
+                tex.magFilter = THREE.LinearFilter;
+                tex.__isCodeTexture = true;
+                if (this.renderer && this.renderer.capabilities) {
+                    tex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+                }
+                this.texCache.set(node, tex);
+                return tex;
+            },
+
+            disposeScene() {
+                if (!this.cityGroup) return;
+                while (this.cityGroup.children.length > 0) {
+                    const obj = this.cityGroup.children[0];
+                    this.cityGroup.remove(obj);
+                    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+                    for (const m of mats) {
+                        if (m.map && m.map.__isCodeTexture) m.map.dispose();
+                        if (m.map && m.map.__isRoofTexture) m.map.dispose();
+                    }
+                }
+                this.texCache.clear();
+                this.roofTexCache.clear();
+                this.pickables = [];
+            },
+
+            buildScene(rects) {
+                if (!this.initialized) return;
+                this.disposeScene();
+
+                for (let i = 0; i < rects.length; i++) {
+                    const r = rects[i];
+                    const isLeaf = !r.node.children;
+                    const pal = PALETTE[r.color] || PALETTE.teal;
+
+                    const bw = Math.max(2.5, r.w - 1.2);
+                    const bd = Math.max(2.5, r.h - 1.2);
+
+                    let bh;
+                    if (isLeaf) {
+                        const loc = Math.max(1, r.node.loc || (r.node.content ? r.node.content.split('\n').length : 1));
+                        bh = Math.max(22, Math.min(1100, Math.round(22 + Math.pow(loc, 0.78) * 3.2)));
+                    } else {
+                        bh = Math.max(10, 30 - r.depth * 4);
+                    }
+
+                    const cx = r.x + r.w / 2 - WORLD_W / 2;
+                    const cz = r.y + r.h / 2 - WORLD_H / 2;
+                    const cy = bh / 2;
+
+                    const sideMat = this.getWallMaterial(r.color, pal);
+
+                    const roofTex = this.getRoofTexture(pal).clone();
+                    roofTex.needsUpdate = true;
+                    roofTex.wrapS = THREE.RepeatWrapping;
+                    roofTex.wrapT = THREE.RepeatWrapping;
+                    roofTex.repeat.set(Math.max(1, bw / 24), Math.max(1, bd / 24));
+                    roofTex.__isRoofTexture = true;
+
+                    const roofMat = new THREE.MeshBasicMaterial({ map: roofTex });
+                    const mats = [sideMat, sideMat, roofMat, sideMat, sideMat, sideMat];
+
+                    const mesh = new THREE.Mesh(this.unitBox, mats);
+                    mesh.scale.set(bw, bh, bd);
+                    mesh.position.set(cx, cy, cz);
+                    mesh.userData = { rect: r, node: r.node, h: bh, cx: cx, cz: cz, isLeaf: isLeaf };
+
+                    if (isLeaf && r.node.content) {
+                        mesh.userData.roofMat = roofMat;
+                        mesh.userData.codeUpgraded = false;
+                    }
+
+                    this.cityGroup.add(mesh);
+                    if (isLeaf || r.depth <= 2) {
+                        this.pickables.push(mesh);
+                    }
+                }
+            },
+
+            resize(w, h) {
+                if (!this.initialized) return;
+                this.camera.aspect = w / h;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(w, h);
+                this.labelsCanvas.width = w * dpr;
+                this.labelsCanvas.height = h * dpr;
+                this.labelsCanvas.style.width = w + 'px';
+                this.labelsCanvas.style.height = h + 'px';
+            },
+
+            activate() {
+                this.init();
+                this.active = true;
+                this.resize(vw, vh);
+                if (ALL.length && (!this.cityGroup || this.cityGroup.children.length === 0)) {
+                    this.buildScene(ALL);
+                }
+                this.startLoop();
+            },
+
+            deactivate() {
+                this.active = false;
+                if (this.animId) cancelAnimationFrame(this.animId);
+            },
+
+            startLoop() {
+                const loop = () => {
+                    if (!this.active) return;
+                    if (this.controls) this.controls.update();
+
+                    if (this.pickables.length) {
+                        const camPos = this.camera.position;
+                        for (let i = 0; i < this.pickables.length; i++) {
+                            const m = this.pickables[i];
+                            const ud = m.userData;
+                            if (!ud.roofMat || ud.codeUpgraded) continue;
+                            const dx = camPos.x - ud.cx;
+                            const dy = camPos.y - ud.h;
+                            const dz = camPos.z - ud.cz;
+                            const distSq = dx * dx + dy * dy + dz * dz;
+                            if (distSq < 1800 * 1800) {
+                                const pal = PALETTE[ud.rect.color] || PALETTE.teal;
+                                const codeTex = this.getCodeTexture(ud.node, pal);
+                                codeTex.wrapS = THREE.RepeatWrapping;
+                                codeTex.wrapT = THREE.RepeatWrapping;
+                                codeTex.repeat.set(1, 1);
+                                ud.roofMat.map = codeTex;
+                                ud.roofMat.needsUpdate = true;
+                                ud.codeUpgraded = true;
+                            }
+                        }
+                    }
+
+                    this.renderer.render(this.scene, this.camera);
+                    this.render3DLabels();
+                    this.animId = requestAnimationFrame(loop);
+                };
+                cancelAnimationFrame(this.animId);
+                this.animId = requestAnimationFrame(loop);
+            },
+
+            render3DLabels() {
+                const ctx3d = this.labelsCtx;
+                ctx3d.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx3d.clearRect(0, 0, vw, vh);
+                ctx3d.textBaseline = 'middle';
+
+                const camPos = this.camera.position;
+                const v = new THREE.Vector3();
+
+                const items = [];
+                const MAX_LABELS = 80;
+                for (let i = 0; i < this.pickables.length; i++) {
+                    const m = this.pickables[i];
+                    const ud = m.userData;
+                    const dx = camPos.x - ud.cx;
+                    const dy = camPos.y - ud.h;
+                    const dz = camPos.z - ud.cz;
+                    const distSq = dx * dx + dy * dy + dz * dz;
+                    const isSelected = state.selected && state.selected.node === ud.node;
+                    if (!isSelected) {
+                        if (ud.isLeaf && distSq > 3800 * 3800) continue;
+                        if (!ud.isLeaf && distSq > 9000 * 9000) continue;
+                    }
+                    items.push({ mesh: m, ud: ud, distSq: distSq, isSelected: isSelected });
+                }
+
+                items.sort((a, b) => b.distSq - a.distSq);
+                if (items.length > MAX_LABELS) {
+                    const sel = items.find(x => x.isSelected);
+                    items.sort((a, b) => a.distSq - b.distSq);
+                    const trimmed = items.slice(0, MAX_LABELS);
+                    if (sel && !trimmed.includes(sel)) trimmed[trimmed.length - 1] = sel;
+                    items.length = 0;
+                    for (const t of trimmed) items.push(t);
+                }
+
+                for (let i = 0; i < items.length; i++) {
+                    const it = items[i];
+                    const ud = it.ud;
+                    const labelY = it.isSelected ? (ud.h + 16) : (ud.h + 2);
+                    v.set(ud.cx, labelY, ud.cz);
+                    v.project(this.camera);
+
+                    if (v.z >= 1) continue;
+                    const sx = (v.x * 0.5 + 0.5) * vw;
+                    const sy = (-v.y * 0.5 + 0.5) * vh;
+                    if (sx < -40 || sx > vw + 40 || sy < -20 || sy > vh + 20) continue;
+
+                    const label = ud.node.name;
+                    const pal = PALETTE[ud.rect.color] || PALETTE.teal;
+                    const fs = it.isSelected ? 11 : 9.5;
+                    ctx3d.font = `${it.isSelected ? '600' : '500'} ${fs}px ui-monospace,"SF Mono",Menlo,monospace`;
+                    const tw = ctx3d.measureText(label).width;
+                    const badgeW = tw + 10;
+                    const badgeH = fs + 6;
+                    const bx = sx - badgeW / 2;
+                    const by = sy - badgeH / 2;
+
+                    ctx3d.fillStyle = it.isSelected ? 'rgba(4, 12, 18, 0.96)' : 'rgba(8, 14, 22, 0.90)';
+                    ctx3d.strokeStyle = it.isSelected ? 'rgba(62, 207, 224, 0.95)' : (ud.isLeaf ? 'rgba(255, 255, 255, 0.22)' : pal.line);
+                    ctx3d.lineWidth = it.isSelected ? 1.5 : 1;
+                    drawPill(ctx3d, bx, by, badgeW, badgeH, 4);
+                    ctx3d.fill();
+                    ctx3d.stroke();
+
+                    ctx3d.fillStyle = it.isSelected ? '#3ecfe0' : '#ffffff';
+                    ctx3d.fillText(label, bx + 5, by + badgeH / 2);
+                }
+            }
+        };
+
+        function setMode(mode) {
+            if (mode === currentMode) return;
+            currentMode = mode;
+
+            const btn2d = document.getElementById('btn-2d');
+            const btn3d = document.getElementById('btn-3d');
+            const map2d = document.getElementById('map');
+            const map3d = document.getElementById('map3d');
+            const labels3d = document.getElementById('labels3d');
+
+            if (mode === '3d') {
+                btn2d.classList.remove('active');
+                btn3d.classList.add('active');
+                map2d.style.display = 'none';
+                map3d.classList.add('active');
+                labels3d.classList.add('active');
+                minimapCanvas.classList.add('hidden');
+                tooltipEl.classList.remove('on');
+                document.getElementById('hint-nav').textContent = 'left-drag to orbit · right-drag to pan · scroll to zoom';
+                document.getElementById('hint-click').textContent = 'click a 3D block to fly in / inspect';
+                Scope3D.activate();
+            } else {
+                btn3d.classList.remove('active');
+                btn2d.classList.add('active');
+                map3d.classList.remove('active');
+                labels3d.classList.remove('active');
+                map2d.style.display = 'block';
+                if (ALL.length) minimapCanvas.classList.remove('hidden');
+                document.getElementById('hint-nav').textContent = 'scroll to zoom · drag to pan';
+                document.getElementById('hint-click').textContent = 'click a block to fly in / inspect';
+                Scope3D.deactivate();
+                render();
+                updateHud();
+            }
+        }
+
+        /* ══════════════════════════════════════════════════════════════════
+           9. HUD + INSPECTOR
+           ══════════════════════════════════════════════════════════════════ */
+        function updateHud() {
+            document.getElementById('zoom').textContent = Math.round(state.view.scale * 100) + '%';
+        }
+
+        function pathOf(node) {
+            const r = ALL.find(x => x.node === node);
+            const out = [];
+            let cur = r;
+            while (cur) { out.unshift(cur.node.name); cur = cur.parent; }
+            return out;
+        }
+
+        function renderCrumbs(node) {
+            if (!node) return;
+            const p = pathOf(node);
+            const el = document.getElementById('crumbs');
+            el.innerHTML = p.map((x, i) => {
+                const isLast = i === p.length - 1;
+                if (isLast) return `<b>${esc(x)}</b>`;
+                const pathPrefix = p.slice(0, i + 1).join('/');
+                return `<span class="crumb" data-path="${esc(pathPrefix)}">${esc(x)}</span>`;
+            }).join('<span class="sep">/</span>');
+        }
+
+        // Clickable breadcrumbs
+        document.getElementById('crumbs').addEventListener('click', e => {
+            const el = e.target.closest('.crumb');
+            if (!el) return;
+            const path = el.dataset.path;
+            if (!path) return;
+            const parts = path.split('/');
+            const node = findNodeByPath(parts);
+            if (!node) return;
+            const rect = ALL.find(r => r.node === node);
+            if (!rect) return;
+            state.selected = rect;
+            flyTo(rect);
+            inspect(node, rect);
+            renderCrumbs(node);
+        });
+
+        function findNodeByPath(parts) {
+            let node = state.root;
+            if (!node) return null;
+            for (const part of parts) {
+                if (!node.children) return null;
+                const c = node.children.get(part);
+                if (!c) return null;
+                node = c;
+            }
+            return node;
+        }
+
+        const INSP_MAX_LINES = 5000;
+        let selectedNode = null;
+        let selectedRect = null;
+
+        function inspect(node, rect) {
+            selectedNode = node;
+            selectedRect = rect;
+            const el = document.getElementById('insp-body');
+            const p = pathOf(node);
+            const swatchColor = (PALETTE[rect ? rect.color : 'teal'] || PALETTE.teal).line;
+            const lang = node.lang || (node.children ? null : langOf(node.name));
+
+            let preview = '';
+            if (!node.children && node.content) {
+                const style = commentStyle(lang);
+                const all = node.content.split('\n');
+                const shown = all.slice(0, INSP_MAX_LINES);
+                const html = shown.map((line, idx) => {
+                    const toks = tokenize(line, style);
+                    const body = toks.map(tk => `<span class="tk-${tk.c}">${esc(tk.t)}</span>`).join('');
+                    return `<span class="ln">${idx + 1}</span>${body}`;
+                }).join('\n');
+                const capped = all.length > INSP_MAX_LINES;
+                const truncated = node.truncatedContent;
+                preview = `
+      <div class="code-title">
+        <span>${shown.length.toLocaleString()} lines shown</span>
+        <span>${fmtBytes(node.size || 0)}</span>
+      </div>
+      <pre>${html}</pre>
+      ${capped ? `<div class="more">… ${(all.length - INSP_MAX_LINES).toLocaleString()} more lines not rendered in inspector</div>` : ''}
+      ${truncated ? `<div class="more">content truncated at ${fmtBytes(MAX_CONTENT_BYTES)} during scan</div>` : ''}
+    `;
+            } else if (!node.children && node.binary) {
+                preview = `<div class="more" style="margin-top:14px;text-align:left;padding:0">Binary or oversized file — content not displayed.</div>`;
+            } else if (!node.children) {
+                preview = `<div class="more" style="margin-top:14px;text-align:left;padding:0">No content stored (empty or unreadable).</div>`;
+            }
+
+            el.innerHTML = `
+    <div class="name">
+      <span class="swatch" style="background:${swatchColor}"></span>
+      ${esc(node.name)}
+    </div>
+    <div class="path">${p.map(esc).join(' / ')}</div>
+    <hr>
+    <div class="kv"><u>${node.loc.toLocaleString()}</u><span>source lines</span></div>
+    <div class="kv"><u>${countFiles(node).toLocaleString()}</u><span>${node.children ? 'files' : 'file'}</span></div>
+    ${node.size != null ? `<div class="kv"><u>${fmtBytes(node.size)}</u><span>size</span></div>` : ''}
+    ${lang ? `<div class="kv"><u>${lang}</u><span>language</span></div>` : ''}
+    ${preview}
+  `;
+        }
+
+        function countFiles(n) { return !n.children ? 1 : [...n.children.values()].reduce((s, c) => s + countFiles(c), 0); }
+        function fmtBytes(b) { if (b < 1024) return b + ' B'; if (b < 1048576) return (b / 1024).toFixed(1) + ' KB'; return (b / 1048576).toFixed(2) + ' MB'; }
+        function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+        /* ── INSPECTOR FOOTER ACTIONS ── */
+        function flashCopied(btn) {
+            btn.classList.add('copied');
+            const original = btn.innerHTML;
+            btn.innerHTML = '✓ Copied';
+            setTimeout(() => { btn.innerHTML = original; btn.classList.remove('copied'); }, 1200);
+        }
+
+        document.getElementById('btn-copy-path').onclick = e => {
+            if (!selectedNode) return;
+            const path = pathOf(selectedNode).join('/');
+            navigator.clipboard.writeText(path).then(() => flashCopied(e.currentTarget));
+        };
+
+        document.getElementById('btn-copy-content').onclick = e => {
+            if (!selectedNode || selectedNode.children) return;
+            const content = selectedNode.content || '';
+            navigator.clipboard.writeText(content).then(() => flashCopied(e.currentTarget));
+        };
+
+        document.getElementById('btn-open-editor').onclick = () => {
+            if (!selectedNode) return;
+            // Best-effort: use file:// protocol. On Chromium, this may be blocked
+            // unless the page is served with proper permissions.
+            const path = pathOf(selectedNode).join('/');
+            const url = 'file:///' + path;
+            window.open(url, '_blank');
+        };
+
+        document.getElementById('btn-up').onclick = () => {
+            const cur = state.selected;
+            if (cur && cur.parent) {
+                state.selected = cur.parent;
+                if (currentMode === '3d') Scope3D.flyTo(cur.parent);
+                else flyTo(cur.parent);
+                inspect(cur.parent.node, cur.parent);
+                renderCrumbs(cur.parent.node);
+            } else {
+                state.selected = null;
+                if (currentMode === '3d') Scope3D.resetView();
+                else fitView(true);
+                renderCrumbs(state.root);
+            }
+        };
+
+        /* ══════════════════════════════════════════════════════════════════
+           9b. STATS PANEL
+           ══════════════════════════════════════════════════════════════════ */
+        const statsPanel = document.getElementById('stats-panel');
+
+        function toggleStats(force) {
+            const on = force !== undefined ? force : !statsPanel.classList.contains('on');
+            statsPanel.classList.toggle('on', on);
+        }
+
+        function updateStats(root) {
+            if (!root) return;
+            document.getElementById('stats-root').textContent = root.name || '—';
+
+            let totalLoc = 0, fileCount = 0, dirCount = 0;
+            const byLang = {};
+
+            (function walk(n) {
+                if (n.children) {
+                    dirCount++;
+                    for (const c of n.children.values()) walk(c);
+                } else {
+                    fileCount++;
+                    totalLoc += n.loc || 0;
+                    if (n.lang) {
+                        byLang[n.lang] = (byLang[n.lang] || 0) + (n.loc || 0);
+                    }
+                }
+            })(root);
+
+            const langCount = Object.keys(byLang).length;
+
+            document.getElementById('stat-grid').innerHTML = `
+                <div class="stat-cell"><div class="k">Lines</div><div class="v">${fmtNum(totalLoc)}</div></div>
+                <div class="stat-cell"><div class="k">Files</div><div class="v">${fmtNum(fileCount)}</div></div>
+                <div class="stat-cell"><div class="k">Folders</div><div class="v">${fmtNum(dirCount)}</div></div>
+                <div class="stat-cell"><div class="k">Languages</div><div class="v">${langCount}</div></div>
+            `;
+
+            const sorted = Object.entries(byLang).sort((a, b) => b[1] - a[1]);
+            const max = sorted.length ? sorted[0][1] : 1;
+            document.getElementById('lang-bars').innerHTML = sorted.slice(0, 12).map(([lang, loc]) => {
+                const color = LANG_COLORS[lang] || DEFAULT_COLOR;
+                const pct = totalLoc ? Math.round((loc / totalLoc) * 100) : 0;
+                const widthPct = Math.round((loc / max) * 100);
+                return `
+                    <div class="lang-bar">
+                        <i style="background:${color}"></i>
+                        <span style="color:var(--txt)">${esc(lang)}</span>
+                        <span class="pct">${pct}%</span>
+                        <div class="track"><b style="width:${widthPct}%;background:${color}"></b></div>
+                    </div>
+                `;
+            }).join('') || `<div style="color:var(--mute);font-size:10.5px;text-align:center;padding:8px 0">No languages detected</div>`;
+        }
+
+        function fmtNum(n) {
+            if (n < 1000) return String(n);
+            if (n < 1000000) return (n / 1000).toFixed(n < 10000 ? 1 : 0) + 'k';
+            return (n / 1000000).toFixed(1) + 'M';
+        }
+
+        /* ══════════════════════════════════════════════════════════════════
+           9c. SEARCH
+           ══════════════════════════════════════════════════════════════════ */
+        const searchOverlay = document.getElementById('search-overlay');
+        const searchInput = document.getElementById('search-input');
+        const searchResults = document.getElementById('search-results');
+        const searchCount = document.getElementById('search-count');
+        let searchSelectedIdx = 0;
+        let searchMatches = [];
+
+        function openSearch() {
+            if (!ALL.length) return;
+            searchOverlay.classList.add('on');
+            searchInput.value = '';
+            searchInput.focus();
+            doSearch('');
+        }
+
+        function closeSearch() {
+            searchOverlay.classList.remove('on');
+            searchInput.blur();
+        }
+
+        function doSearch(query) {
+            const q = query.trim().toLowerCase();
+            const tokens = q.split(/\s+/).filter(Boolean);
+
+            searchMatches = FILE_INDEX.filter(f => {
+                const hay = (f.path + ' ' + f.name).toLowerCase();
+                for (const t of tokens) if (!hay.includes(t)) return false;
+                return true;
+            });
+
+            // Sort: exact-name-match first, then by LOC desc
+            searchMatches.sort((a, b) => {
+                const aExact = tokens.length && a.name.toLowerCase() === tokens[0];
+                const bExact = tokens.length && b.name.toLowerCase() === tokens[0];
+                if (aExact !== bExact) return aExact ? -1 : 1;
+                const aStart = tokens.length && a.name.toLowerCase().startsWith(tokens[0]);
+                const bStart = tokens.length && b.name.toLowerCase().startsWith(tokens[0]);
+                if (aStart !== bStart) return aStart ? -1 : 1;
+                return b.loc - a.loc;
+            });
+
+            searchSelectedIdx = 0;
+            renderSearchResults(tokens);
+            searchCount.textContent = `${searchMatches.length} match${searchMatches.length === 1 ? '' : 'es'}`;
+        }
+
+        function renderSearchResults(tokens) {
+            const top = searchMatches.slice(0, 60);
+            if (!top.length) {
+                searchResults.innerHTML = `<div class="empty">No files match "${esc(searchInput.value)}"</div>`;
+                return;
+            }
+            searchResults.innerHTML = top.map((f, i) => {
+                const pal = PALETTE[f.color] || PALETTE.teal;
+                const name = highlightTokens(f.name, tokens);
+                const dir = f.path.split('/').slice(0, -1).join(' / ');
+                const dirHl = highlightTokens(dir, tokens);
+                return `
+                    <div class="r ${i === searchSelectedIdx ? 'sel' : ''}" data-idx="${i}">
+                        <span class="dot" style="background:${pal.line}"></span>
+                        <span class="name">${name}</span>
+                        <span class="path">${dirHl}</span>
+                        <span class="loc">${f.loc.toLocaleString()}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function highlightTokens(text, tokens) {
+            if (!tokens.length) return esc(text);
+            // Simple case-insensitive highlight of the first token only for sanity
+            const t = tokens[0];
+            const idx = text.toLowerCase().indexOf(t);
+            if (idx === -1) return esc(text);
+            return esc(text.slice(0, idx)) + '<mark>' + esc(text.slice(idx, idx + t.length)) + '</mark>' + esc(text.slice(idx + t.length));
+        }
+
+        function navigateSearch(dir) {
+            if (!searchMatches.length) return;
+            const max = Math.min(searchMatches.length, 60);
+            searchSelectedIdx = (searchSelectedIdx + dir + max) % max;
+            const top = searchMatches.slice(0, max);
+            const rows = searchResults.querySelectorAll('.r');
+            rows.forEach((r, i) => r.classList.toggle('sel', i === searchSelectedIdx));
+            const sel = rows[searchSelectedIdx];
+            if (sel) sel.scrollIntoView({ block: 'nearest' });
+        }
+
+        function commitSearch() {
+            const f = searchMatches[searchSelectedIdx];
+            if (!f) return;
+            const rect = f.rect;
+            state.selected = rect;
+            if (currentMode === '3d' && Scope3D.initialized) {
+                Scope3D.flyTo(rect);
+            } else {
+                flyTo(rect);
+            }
+            inspect(f.node, rect);
+            renderCrumbs(f.node);
+            closeSearch();
+        }
+
+        searchInput.addEventListener('input', e => doSearch(e.target.value));
+
+        searchInput.addEventListener('keydown', e => {
+            if (e.key === 'ArrowDown') { e.preventDefault(); navigateSearch(1); }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); navigateSearch(-1); }
+            else if (e.key === 'Enter') { e.preventDefault(); commitSearch(); }
+            else if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
+        });
+
+        searchResults.addEventListener('click', e => {
+            const row = e.target.closest('.r');
+            if (!row) return;
+            searchSelectedIdx = parseInt(row.dataset.idx);
+            commitSearch();
+        });
+
+        searchResults.addEventListener('mousemove', e => {
+            const row = e.target.closest('.r');
+            if (!row) return;
+            const idx = parseInt(row.dataset.idx);
+            if (idx === searchSelectedIdx) return;
+            searchSelectedIdx = idx;
+            searchResults.querySelectorAll('.r').forEach((r, i) => r.classList.toggle('sel', i === searchSelectedIdx));
+        });
+
+        searchOverlay.addEventListener('mousedown', e => {
+            if (e.target === searchOverlay) closeSearch();
+        });
+
+        /* ══════════════════════════════════════════════════════════════════
+           9d. HELP OVERLAY
+           ══════════════════════════════════════════════════════════════════ */
+        const helpEl = document.getElementById('help');
+        document.getElementById('help').addEventListener('click', e => {
+            if (e.target === helpEl) helpEl.classList.remove('on');
+        });
+
+        /* ══════════════════════════════════════════════════════════════════
+           10. FOLDER PICKING
+           ══════════════════════════════════════════════════════════════════ */
+        const emptyEl = document.getElementById('empty');
+        const progressEl = document.getElementById('progress');
+        const progressBarEl = document.getElementById('progress-bar');
+        const progressFill = progressBarEl.querySelector('i');
+
+        async function pickFolder() {
+            if (!window.showDirectoryPicker) {
+                alert('Your browser does not support the File System Access API. Use Chrome or Edge.');
+                return;
+            }
+            let handle;
+            try {
+                handle = await window.showDirectoryPicker({ id: 'codescope', mode: 'read' });
+            } catch (e) { return; }
+
+            emptyEl.classList.remove('hidden');
+            progressEl.textContent = 'scanning…';
+            progressBarEl.classList.add('on');
+            progressFill.style.width = '5%';
+            document.getElementById('btn-pick').textContent = 'Scanning…';
+
+            try {
+                const { entries, truncated } = await scanFolder(handle, (n, done, total) => {
+                    if (done) {
+                        progressEl.textContent = `reading ${n} / ${total}…`;
+                        progressFill.style.width = (5 + (n / total) * 90).toFixed(1) + '%';
+                    } else {
+                        progressEl.textContent = `found ${n} files…`;
+                        progressFill.style.width = Math.min(30, n / 200).toFixed(1) + '%';
+                    }
+                });
+                progressFill.style.width = '100%';
+                progressEl.textContent = `${entries.length} files${truncated ? ' (truncated)' : ''}`;
+
+                const root = buildTree(entries, handle.name);
+                loadRoot(root);
+                setTimeout(() => {
+                    emptyEl.classList.add('hidden');
+                    progressBarEl.classList.remove('on');
+                }, 200);
+            } catch (e) {
+                console.error(e);
+                progressEl.textContent = 'scan failed: ' + e.message;
+                document.getElementById('btn-pick').textContent = 'Open Folder';
+                progressBarEl.classList.remove('on');
+            }
+        }
+
+        function loadRoot(root) {
+            state.root = root;
+            state.selected = null;
+            layout(root);
+            fitView(false);
+            renderCrumbs(root);
+            inspect(root, ALL[0]);
+            updateHud();
+            updateStats(root);
+            minimapCanvas.classList.remove('hidden');
+            initMinimap();
+            renderMinimap();
+            if (typeof Scope3D !== 'undefined' && Scope3D.initialized) {
+                Scope3D.buildScene(ALL);
+                if (currentMode === '3d') Scope3D.resetView();
+            }
+        }
+
+        document.getElementById('btn-pick').onclick = pickFolder;
+        document.getElementById('btn-open').onclick = pickFolder;
+        document.getElementById('btn-demo').onclick = () => {
+            const demo = buildDemo();
+            loadRoot(demo);
+            emptyEl.classList.add('hidden');
+        };
+        document.getElementById('btn-stats').onclick = () => toggleStats();
+        document.getElementById('btn-search').onclick = openSearch;
+
+        /* ══════════════════════════════════════════════════════════════════
+           10b. GLOBAL KEYBOARD
+           ══════════════════════════════════════════════════════════════════ */
+        document.addEventListener('keydown', e => {
+            const k = e.key;
+            const inSearch = searchOverlay.classList.contains('on');
+            const inHelp = helpEl.classList.contains('on');
+
+            // Search
+            if ((e.metaKey || e.ctrlKey) && k.toLowerCase() === 'k') {
+                e.preventDefault();
+                if (inSearch) closeSearch(); else openSearch();
+                return;
+            }
+
+            if (inSearch || inHelp) {
+                if (k === 'Escape') {
+                    if (inSearch) closeSearch();
+                    if (inHelp) helpEl.classList.remove('on');
+                    e.preventDefault();
+                }
+                return;
+            }
+
+            if (k === '?') { helpEl.classList.toggle('on'); return; }
+            if (k === '2') { setMode('2d'); return; }
+            if (k === '3') { setMode('3d'); return; }
+            if (k === 's' || k === 'S') { toggleStats(); return; }
+            if (k === 'v' || k === 'V') {
+                if (currentMode === '3d') Scope3D.resetView();
+                else fitView(true);
+                return;
+            }
+            if (k === 'Escape' || k === 'Backspace') {
+                e.preventDefault();
+                const cur = state.selected;
+                if (cur && cur.parent) {
+                    state.selected = cur.parent;
+                    if (currentMode === '3d') Scope3D.flyTo(cur.parent);
+                    else flyTo(cur.parent);
+                    inspect(cur.parent.node, cur.parent);
+                    renderCrumbs(cur.parent.node);
+                } else {
+                    state.selected = null;
+                    if (currentMode === '3d') Scope3D.resetView();
+                    else fitView(true);
+                    renderCrumbs(state.root);
+                }
+            } else if (k === '0') {
+                state.selected = null;
+                if (currentMode === '3d') Scope3D.resetView();
+                else fitView(true);
+                renderCrumbs(state.root);
+            } else if (k === '+' || k === '=') {
+                if (currentMode === '3d' && Scope3D.camera) Scope3D.camera.position.multiplyScalar(0.85);
+                else zoomAt(vw / 2, vh / 2, 1.5);
+            } else if (k === '-' || k === '_') {
+                if (currentMode === '3d' && Scope3D.camera) Scope3D.camera.position.multiplyScalar(1.18);
+                else zoomAt(vw / 2, vh / 2, 1 / 1.5);
+            }
+        });
+
+        document.getElementById('zin').onclick = () => {
+            if (currentMode === '3d' && Scope3D.camera) Scope3D.camera.position.multiplyScalar(0.85);
+            else zoomAt(vw / 2, vh / 2, 1.5);
+        };
+        document.getElementById('zout').onclick = () => {
+            if (currentMode === '3d' && Scope3D.camera) Scope3D.camera.position.multiplyScalar(1.18);
+            else zoomAt(vw / 2, vh / 2, 1 / 1.5);
+        };
+        document.getElementById('zfit').onclick = () => {
+            state.selected = null;
+            if (currentMode === '3d') Scope3D.resetView();
+            else fitView(true);
+            renderCrumbs(state.root);
+        };
+        document.getElementById('zview').onclick = () => {
+            if (currentMode === '3d') Scope3D.resetView();
+            else fitView(true);
+        };
+        document.getElementById('btn-2d').onclick = () => setMode('2d');
+        document.getElementById('btn-3d').onclick = () => setMode('3d');
+
+        /* ══════════════════════════════════════════════════════════════════
+           11. DEMO TREE
+           ══════════════════════════════════════════════════════════════════ */
+        function buildDemo() {
+            const CPP_LAYOUT = `// Copyright 2024 The Chromium Authors
+// Use of this source code is governed by a BSD-style license.
+
+#include "third_party/blink/renderer/core/layout/layout_object.h"
+
+#include "base/memory/raw_ptr.h"
+#include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/frame/local_frame_view.h"
+
+namespace blink {
+
+LayoutObject::LayoutObject(ContainerNode* node)
+    : node_(node),
+      parent_(nullptr),
+      previous_(nullptr),
+      next_(nullptr),
+      style_(nullptr),
+      bitfields_(0) {
+  DCHECK(node);
+  SetIsAnonymous(false);
+}
+
+void LayoutObject::SetStyle(const ComputedStyle* style) {
+  if (style_ == style) return;
+  const ComputedStyle* old_style = style_;
+  style_ = style;
+  if (style && style->IsDisplayNone()) {
+    if (parent_) parent_->RemoveChild(this);
+    return;
+  }
+  for (LayoutObject* ancestor = parent_; ancestor;
+       ancestor = ancestor->parent_) {
+    ancestor->StyleDidChange(style, old_style);
+  }
+}
+
+bool LayoutObject::IsDescendantOf(const LayoutObject* other) const {
+  for (const LayoutObject* runner = this; runner;
+       runner = runner->parent_) {
+    if (runner == other) return true;
+  }
+  return false;
+}
+
+}  // namespace blink`;
+
+            const CPP_HEADER = `#ifndef THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_LAYOUT_OBJECT_H_
+#define THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_LAYOUT_OBJECT_H_
+
+#include "third_party/blink/renderer/core/core_export.h"
+
+namespace blink {
+
+class ComputedStyle;
+class ContainerNode;
+
+class CORE_EXPORT LayoutObject : public GarbageCollectedMixin {
+ public:
+  virtual ~LayoutObject();
+
+  LayoutObject* Parent() const { return parent_; }
+  LayoutObject* PreviousSibling() const { return previous_; }
+  LayoutObject* NextSibling() const { return next_; }
+
+  bool IsDescendantOf(const LayoutObject* other) const;
+
+  const ComputedStyle* Style() const { return style_; }
+  void SetStyle(const ComputedStyle* style);
+
+ protected:
+  explicit LayoutObject(ContainerNode* node);
+
+ private:
+  raw_ptr<ContainerNode> node_;
+  raw_ptr<LayoutObject> parent_;
+  raw_ptr<LayoutObject> previous_;
+  raw_ptr<LayoutObject> next_;
+  raw_ptr<const ComputedStyle> style_;
+  unsigned bitfields_;
+};
+
+}  // namespace blink
+
+#endif`;
+
+            const JS_ANIMATION = `// Animation worklet: drives scroll-linked animations off the main thread.
+class ScrollTimeline {
+  constructor(options) {
+    this.source = options.source;
+    this.orientation = options.orientation || 'block';
+  }
+
+  get currentTime() {
+    const el = this.source;
+    if (!el) return 0;
+    const rect = el.getBoundingClientRect();
+    const pos = this.orientation === 'block' ? rect.top : rect.left;
+    const size = this.orientation === 'block'
+      ? el.scrollHeight - rect.height
+      : el.scrollWidth - rect.width;
+    return Math.max(0, Math.min(size, -pos));
+  }
+}
+
+class FadeInEffect {
+  constructor(target) {
+    this.target = target;
+  }
+  update(progress) {
+    const eased = progress * progress * (3 - 2 * progress);
+    this.target.style.opacity = eased.toFixed(3);
+    this.target.style.transform = \`translateY(\${(1 - eased) * 20}px)\`;
+  }
+}
+
+registerAnimator('scroll-fade', class {
+  constructor(options) {
+    this.effect = new FadeInEffect(options.target);
+    this.timeline = new ScrollTimeline({ source: options.scrollSource });
+  }
+  animate(currentTime) {
+    const duration = this.timeline.currentTime;
+    if (duration === 0) { this.effect.update(0); return; }
+    const progress = Math.max(0, Math.min(1, currentTime / duration));
+    this.effect.update(progress);
+  }
+});`;
+
+            const JS_CSP = `// Content-security-policy reporting.
+const BATCH_SIZE = 25;
+const MAX_QUEUE = 200;
+
+export class CspReporter {
+  constructor(endpoint = '/csp-report') {
+    this.endpoint = endpoint;
+    this.queue = [];
+    this.timer = null;
+  }
+
+  report(violation) {
+    if (this.queue.length >= MAX_QUEUE) this.queue.shift();
+    this.queue.push({
+      'blocked-uri': violation.blockedURI,
+      'violated-directive': violation.violatedDirective,
+      timestamp: Date.now(),
+    });
+    if (this.queue.length >= BATCH_SIZE) this.flush();
+    else if (!this.timer) this.timer = setTimeout(() => this.flush(), 2000);
+  }
+
+  async flush() {
+    if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+    if (!this.queue.length) return;
+    const body = JSON.stringify({ reports: this.queue });
+    this.queue.length = 0;
+    try {
+      await fetch(this.endpoint, { method: 'POST', body, keepalive: true });
+    } catch (err) { console.warn('[csp] send failed', err); }
+  }
+}
+
+const reporter = new CspReporter();
+document.addEventListener('securitypolicyviolation', (e) => reporter.report(e));`;
+
+            const PY_SCAN = `import os
+import asyncio
+from pathlib import Path
+from dataclasses import dataclass
+from typing import Iterator, Optional
+
+IGNORED_DIRS = {'node_modules', '.git', 'dist', 'build', '__pycache__'}
+
+@dataclass
+class FileEntry:
+    path: str
+    loc: int
+    size: int
+    lang: Optional[str]
+
+def iter_files(root: Path) -> Iterator[Path]:
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in IGNORED_DIRS]
+        for name in filenames:
+            yield Path(dirpath) / name
+
+def count_lines(path: Path) -> int:
+    try:
+        with open(path, 'rb') as f:
+            data = f.read()
+    except OSError:
+        return 0
+    if b'\\x00' in data[:8192]:
+        return 0
+    n = data.count(b'\\n')
+    if data and not data.endswith(b'\\n'):
+        n += 1
+    return n
+
+async def scan(root: Path) -> list[FileEntry]:
+    loop = asyncio.get_running_loop()
+    entries = []
+    for p in iter_files(root):
+        loc = await loop.run_in_executor(None, count_lines, p)
+        entries.append(FileEntry(
+            path=str(p.relative_to(root)),
+            loc=loc, size=p.stat().st_size,
+            lang=p.suffix.lstrip('.') or None,
+        ))
+    return entries`;
+
+            const RS_INDEX = `use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::RwLock;
+
+pub struct FileIndex {
+    files: RwLock<HashMap<String, FileEntry>>,
+    root: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+pub struct FileEntry {
+    pub path: String,
+    pub loc: u64,
+    pub lang: Option<String>,
+    pub size: u64,
+}
+
+impl FileIndex {
+    pub fn new(root: impl Into<PathBuf>) -> Self {
+        Self { files: RwLock::new(HashMap::new()), root: root.into() }
+    }
+
+    pub fn insert(&self, path: String, entry: FileEntry) {
+        self.files.write().unwrap().insert(path, entry);
+    }
+
+    pub fn total_loc(&self) -> u64 {
+        self.files.read().unwrap().values().map(|f| f.loc).sum()
+    }
+
+    pub fn by_language(&self) -> HashMap<String, u64> {
+        let mut out: HashMap<String, u64> = HashMap::new();
+        for e in self.files.read().unwrap().values() {
+            if let Some(lang) = &e.lang {
+                *out.entry(lang.clone()).or_insert(0) += e.loc;
+            }
+        }
+        out
+    }
+}`;
+
+            const CSS_GRID = `/* CSS Grid test. */
+.grid {
+  display: grid;
+  grid-template-columns: [start] 1fr [middle] 2fr [end];
+  grid-template-areas:
+    "header header"
+    "sidebar main"
+    "footer footer";
+  gap: 12px 16px;
+}
+
+.grid > .header {
+  grid-area: header;
+  background: linear-gradient(180deg, #1e3a8a, #152a63);
+}
+
+.flex-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .grid { grid-template-columns: 1fr; }
+}`;
+
+            const HTML_TEST = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Flexbox test</title>
+  <style>
+    .container { display: flex; width: 200px; height: 100px; }
+    .item { width: 40px; height: 20px; background: steelblue; }
+  </style>
+</head>
+<body>
+  <div class="container" style="align-items: center">
+    <div class="item"></div>
+    <div class="item"></div>
+  </div>
+</body>
+</html>`;
+
+            const JSON_MANIFEST = `{
+  "version": 8,
+  "url_base": "/",
+  "items": {
+    "css": {
+      "flexbox": {
+        "align-content": [
+          { "path": "flexbox/align-content-001.html" },
+          { "path": "flexbox/align-content-002.html" }
+        ]
+      },
+      "grid": {
+        "grid-template-areas": [
+          { "path": "grid/template-areas-basic.html" }
+        ]
+      }
+    }
+  }
+}`;
+
+            const files = [
+                { name: 'layout_object.cc', content: CPP_LAYOUT, path: 'src/renderer/core/layout' },
+                { name: 'layout_object.h', content: CPP_HEADER, path: 'src/renderer/core/layout' },
+                { name: 'style_engine.cc', content: CPP_LAYOUT, path: 'src/renderer/core/style' },
+                { name: 'animation-worklet.js', content: JS_ANIMATION, path: 'src/animation' },
+                { name: 'content-security-policy.js', content: JS_CSP, path: 'src/security' },
+                { name: 'scan.py', content: PY_SCAN, path: 'tools' },
+                { name: 'file_index.rs', content: RS_INDEX, path: 'crates/core/src' },
+                { name: 'grid.css', content: CSS_GRID, path: 'src/styles' },
+                { name: 'flexbox-alignment.html', content: HTML_TEST, path: 'web_tests/css' },
+                { name: 'WPT_BASE_MANIFEST_8.json', content: JSON_MANIFEST, path: 'web_tests/external' },
+            ];
+
+            const root = { name: 'demo-project', path: '', isDir: true, children: new Map(), loc: 0 };
+            function mkdir(pathParts) {
+                let node = root;
+                let acc = '';
+                for (const part of pathParts) {
+                    acc = acc ? acc + '/' + part : part;
+                    let c = node.children.get(part);
+                    if (!c) {
+                        c = { name: part, path: acc, isDir: true, children: new Map(), loc: 0 };
+                        node.children.set(part, c);
+                    }
+                    node = c;
+                }
+                return node;
+            }
+            for (const f of files) {
+                const parts = f.path.split('/');
+                const parent = mkdir(parts);
+                const leaf = {
+                    name: f.name, path: f.path + '/' + f.name, isDir: false, children: null,
+                    loc: f.content.split('\n').length, size: f.content.length,
+                    binary: false, content: f.content, lang: langOf(f.name),
+                };
+                parent.children.set(f.name, leaf);
+            }
+            function rollup(n) {
+                if (!n.children) return n.loc;
+                let s = 0;
+                for (const c of n.children.values()) s += rollup(c);
+                n.loc = s;
+                return s;
+            }
+            rollup(root);
+            return root;
+        }
+
+        /* ══════════════════════════════════════════════════════════════════
+           12. BOOT
+           ══════════════════════════════════════════════════════════════════ */
+        new ResizeObserver(() => {
+            resize();
+            initMinimap();
+            renderMinimap();
+        }).observe(wrap);
+        resize();
+        window.addEventListener('load', () => { resize(); initMinimap(); });
+    </script>
+</body>
+
+</html>
